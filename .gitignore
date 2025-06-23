@@ -1,3 +1,5 @@
 build/
 .cache/
 *.so
+bin/
+.vscode/

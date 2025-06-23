@@ -1,13 +1,37 @@
-cmake_minimum_required(VERSION 3.29..3.31)
-project(
-  rohan
-  VERSION 24.1.0
-  DESCRIPTION "SIMD accelerated software rendering library"
-  LANGUAGES C)
+﻿cmake_minimum_required(VERSION 4.0)
+project(rohan
+	VERSION 2025.2.0
+	LANGUAGES CXX
+	DESCRIPTION "CPU-only 3D renderer"
+)
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
-set(ROHAN_LIB ${PROJECT_NAME})
-set(SANDBOX_BIN ${PROJECT_NAME}_sb)
+add_library(rohan SHARED
+	"src/plane.cpp"
+	"src/barycentric.cpp"
+	"src/config.cpp"
+	"src/render.cpp"
+	"src/state.cpp"
+	"src/transform.cpp"
+)
 
-add_subdirectory(rohan)
-add_subdirectory(sandbox)
+set_target_properties(rohan PROPERTIES
+	EXPORT_COMPILE_COMMANDS TRUE
+	CXX_VISIBILITY_PRESET hidden
+	CXX_STANDARD 20
+	CXX_STANDARD_REQUIRED TRUE
+	CXX_EXTENSIONS OFF
+)
+
+if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
+	set (OPTIMIZATIONS "-g")
+else()
+	set (OPTIMIZATIONS "-O2" "-march=native")
+endif()
+
+target_include_directories(rohan PUBLIC "include")
+target_compile_options(rohan PRIVATE ${OPTIMIZATIONS} -Wall -Wextra -Wpedantic)
+
+add_subdirectory("vendor/glm" EXCLUDE_FROM_ALL)
+target_link_libraries(rohan PUBLIC glm::glm)
+
+add_subdirectory("testing")
