@@ -12,7 +12,7 @@ namespace rohan {
 
     template <typename T>
     concept has_position = requires(T t) {
-        { t.position() } -> std::same_as<glm::vec4&>;
+        { t.position() } -> std::same_as<const glm::vec4&>;
     };
 
     template <typename T>

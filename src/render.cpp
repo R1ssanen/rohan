@@ -5,6 +5,7 @@
 
 #include "barycentric.hpp"
 #include "config.hpp"
+#include "state.hpp"
 #include "transform.hpp"
 
 namespace {
@@ -51,7 +52,7 @@ namespace rohan {
 
     // render directly from ndc-coordinates
     void render_triangle_direct(
-        FrameU32& color_buffer, FrameF32& depth_buffer, RenderState& state, glm::vec4 p0,
+        RenderState& state, FrameU32& color_buffer, FrameF32& depth_buffer, glm::vec4 p0,
         glm::vec4 p1, glm::vec4 p2
     ) {
 
@@ -82,6 +83,7 @@ namespace rohan {
 
             u64       row      = u64(y0) * color_buffer.width();
             u32       y_step   = 0;
+            Program&  program  = state.program();
 
             for (f32 y = std::trunc(y0); y < std::trunc(y1);
                  ++y, ++y_step, row += color_buffer.width()) {
@@ -100,7 +102,10 @@ namespace rohan {
                         glm::vec3 barycoord = b * w_pack;
                         barycoord /= (barycoord.x + barycoord.y + barycoord.z);
 
-                        color_buffer[row + u32(x)] = glm::packUnorm4x8(glm::vec4(1.f, barycoord));
+                        // program.uniforms.set_uniform(0, barycoord);
+                        program(0, color_buffer[row + u32(x)]);
+                        // color_buffer[row + u32(x)] = glm::packUnorm4x8(glm::vec4(1.f,
+                        // barycoord));
                     }
 
                     b += slope_b0;

@@ -9,4 +9,11 @@ namespace rohan {
         return *this;
     }
 
+    Program&     RenderState::program() noexcept { return *m_program; }
+
+    RenderState& RenderState::program(Program& program) noexcept {
+        m_program = &program;
+        return *this;
+    }
+
 } // namespace rohan

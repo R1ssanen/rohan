@@ -8,7 +8,7 @@
 #include "barycentric.hpp"
 #include "frame.hpp"
 #include "render.hpp"
-#include "shader.hpp"
+#include "shader_type.hpp"
 #include "state.hpp"
 #include "transform.hpp"
 #include "vertex_type.hpp"
@@ -21,11 +21,16 @@ namespace rohan {
         RenderState& state, FrameF32& depth_buffer, const std::vector<VertexType>& vertices,
         const std::vector<u32>& indices
     ) {
+        Program&                program = state.program();
 
         std::vector<VertexType> transformed;
         transformed.reserve(vertices.size());
 
-        for (const auto& vertex : vertices) transformed.push_back(vertex);
+        for (const auto& vertex : vertices) {
+            // const glm::vec4& in = vertex.position();
+            //  transformed.push_back(program(0, in));
+            transformed.push_back(vertex);
+        }
 
         auto hash = [](u32 x) -> u32 {
             x += (x << 10);
@@ -37,7 +42,9 @@ namespace rohan {
         };
 
         u64 triangle_id = 0;
-        for (u64 i = 0; i < indices.size(); i += 3, triangle_id = hash(i)) {
+        for (u64 i = 0; i < indices.size(); i += 3, ++triangle_id) {
+
+            // program.uniforms.set_pod_uniform<uint32_t>(0, hash(triangle_id));
 
             glm::vec4 p0      = transformed[indices[i + 0]].position();
             glm::vec4 p1      = transformed[indices[i + 1]].position();
@@ -48,7 +55,7 @@ namespace rohan {
             p1                = clip_to_ndc_zo(p1, m_width, m_height, minz, maxz);
             p2                = clip_to_ndc_zo(p2, m_width, m_height, minz, maxz);
 
-            render_triangle_direct(*this, depth_buffer, state, p0, p1, p2);
+            render_triangle_direct(state, *this, depth_buffer, p0, p1, p2);
             continue;
 
             p0 = ndc_to_screen(p0, m_width, m_height);

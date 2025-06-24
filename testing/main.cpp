@@ -1,4 +1,6 @@
 #include <chrono>
+#include <glm/packing.hpp>
+#include <glm/vec3.hpp>
 #include <iostream>
 #include <SDL3/SDL.h>
 
@@ -6,11 +8,12 @@
 #include "drawcall.hpp"
 #include "frame.hpp"
 #include "render.hpp"
+#include "shader_type.hpp"
 
 struct Vertex {
-    glm::vec4& position() noexcept { return pos; }
+    const glm::vec4& position() const noexcept { return pos; }
 
-    Vertex     interpolate(const Vertex& other, float t) const noexcept {
+    Vertex           interpolate(const Vertex& other, float t) const noexcept {
         return { pos + t * other.pos };
     }
 
@@ -25,6 +28,19 @@ int main() {
 
     rohan::RenderState state;
     state.config(config);
+
+    rohan::Program program = {
+        {},
+        [](const rohan::UniformBuffer& ub, uint64_t index, uint32_t& out) {
+            out = ub.get_uniform<uint32_t>("secret_color");
+            // auto bc = ub.get_uniform<glm::vec3>(0);
+            // out     = glm::packUnorm4x8(glm::vec4(1.f, bc));
+        },
+        [](const rohan::UniformBuffer& ub, uint64_t index, const glm::vec4& in) { return in; },
+    };
+    state.program(program);
+
+    program.uniforms.push_uniform<uint32_t>(0xff0000ff, "secret_color");
 
     uint32_t              width = 480, height = 300;
     rohan::FrameU32       color_buffer(width, height);
@@ -42,6 +58,7 @@ int main() {
         renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, width, height
     );
     SDL_SetTextureScaleMode(frame, SDL_SCALEMODE_NEAREST);
+    SDL_SetTextureBlendMode(frame, SDL_BLENDMODE_NONE);
     SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
 
     for (auto keys = SDL_GetKeyboardState(nullptr); !keys[SDL_SCANCODE_Q]; SDL_PumpEvents()) {

@@ -2,6 +2,7 @@
 #define ROHAN_STATE_HPP_
 
 #include "config.hpp"
+#include "shader_type.hpp"
 
 namespace rohan {
 
@@ -11,9 +12,13 @@ namespace rohan {
         RenderConfig& config() noexcept;
         RenderState&  config(const RenderConfig& config) noexcept;
 
+        Program&      program() noexcept;
+        RenderState&  program(Program& program) noexcept;
+
       private:
 
         RenderConfig m_config;
+        Program*     m_program;
     };
 
 } // namespace rohan

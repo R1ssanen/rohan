@@ -10,7 +10,7 @@
 namespace rohan {
 
     RAPI void render_triangle_direct(
-        FrameU32& color_buffer, FrameF32& depth_buffer, RenderState& state, glm::vec4 p0,
+        RenderState& state, FrameU32& color_buffer, FrameF32& depth_buffer, glm::vec4 p0,
         glm::vec4 p1, glm::vec4 p2
     );
 
