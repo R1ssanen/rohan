@@ -2,6 +2,7 @@
 #define ROHAN_BUFFER_HPP_
 
 #include <cassert>
+#include <immintrin.h>
 #include <iostream>
 
 #include "rhdefs.hpp"
@@ -18,7 +19,7 @@ namespace rohan {
         ~Buffer() {
             if (!m_data) return;
             else if (m_owning)
-                free(m_data);
+                _mm_free(m_data); // free(m_data);
         }
 
         Buffer(u32 width, u32 height, T* ptr)
@@ -30,7 +31,7 @@ namespace rohan {
 
         Buffer(u32 width, u32 height)
             : m_count(width * height), m_width(width), m_height(height), m_pitch(width * stride()) {
-            void* allocated = malloc(m_count * stride());
+            void* allocated = _mm_malloc(m_count * stride(), 32);
             m_data          = reinterpret_cast<T*>(allocated);
             m_owning        = true;
         }

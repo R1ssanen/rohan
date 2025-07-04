@@ -25,11 +25,11 @@ set_target_properties(rohan PROPERTIES
 if(${CMAKE_BUILD_TYPE} STREQUAL "Debug")
 	set (OPTIMIZATIONS "-g")
 else()
-	set (OPTIMIZATIONS "-O2" "-march=native")
+	set (OPTIMIZATIONS "-O3")
 endif()
 
 target_include_directories(rohan PUBLIC "include")
-target_compile_options(rohan PRIVATE ${OPTIMIZATIONS} -Wall -Wextra -Wpedantic)
+target_compile_options(rohan PRIVATE ${OPTIMIZATIONS} -Wall -Wextra -Wpedantic -march=native)
 
 add_subdirectory("vendor/glm" EXCLUDE_FROM_ALL)
 target_link_libraries(rohan PUBLIC glm::glm)

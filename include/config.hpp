@@ -47,7 +47,7 @@ namespace rohan {
 
 namespace rohan {
 
-    class RenderConfig {
+    class RAPI RenderConfig {
       public:
 
         RenderConfig&       cull_backfaces(bool value) noexcept;

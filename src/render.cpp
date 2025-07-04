@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <glm/packing.hpp>
+#include <immintrin.h>
 
 #include "barycentric.hpp"
 #include "config.hpp"
+#include "simd/vector.hpp"
 #include "state.hpp"
 #include "transform.hpp"
 
@@ -84,6 +86,7 @@ namespace rohan {
             u64       row      = u64(y0) * color_buffer.width();
             u32       y_step   = 0;
             Program&  program  = state.program();
+            u32*      pixels   = color_buffer.data();
 
             for (f32 y = std::trunc(y0); y < std::trunc(y1);
                  ++y, ++y_step, row += color_buffer.width()) {
@@ -95,18 +98,18 @@ namespace rohan {
                 for (f32 x = std::trunc(slope_xl * y_step + x0);
                      x < std::trunc(slope_xr * y_step + x1); ++x) {
 
-                    f32& depth = depth_buffer[row + u32(x)];
-                    if (depth > z) {
-                        depth               = z;
+                    // f32& depth = depth_buffer[row + u32(x)];
+                    // if (depth > z) {
+                    //     depth               = z;
 
-                        glm::vec3 barycoord = b * w_pack;
-                        barycoord /= (barycoord.x + barycoord.y + barycoord.z);
+                    //     glm::vec3 barycoord = b * w_pack;
+                    //     barycoord /= (barycoord.x + barycoord.y + barycoord.z);
 
-                        // program.uniforms.set_uniform(0, barycoord);
-                        program(0, color_buffer[row + u32(x)]);
-                        // color_buffer[row + u32(x)] = glm::packUnorm4x8(glm::vec4(1.f,
-                        // barycoord));
-                    }
+                    //     program.uniforms.push_uniform(barycoord, "bc");
+                    //     program(0, color_buffer[row + u32(x)]);
+                    // }
+
+                    pixels[row + u32(x)] = glm::packUnorm4x8(glm::vec4(1.f, b[2], b[1], b[0]));
 
                     b += slope_b0;
                     w += slope_w0;
@@ -119,16 +122,104 @@ namespace rohan {
             }
         };
 
+        auto rasterize_simd = [&color_buffer, &depth_buffer, &state, &bary, &z_pack, &w_pack](
+                                  f32 x0, f32 x1, f32 y0, f32 y1, f32 z0s, f32 w0, f32 slope_xl,
+                                  f32 slope_xr, f32 slope_z0s, f32 slope_z1s, f32 slope_w0,
+                                  f32 slope_w1
+                              ) {
+            glm::vec3 slope_b0s   = bary.slope_x();
+            glm::vec3 slope_b1s   = bary.slope_y(slope_xl);
+            glm::vec3 b0s         = bary.coordinate(x0, y0);
+
+            F256      slope_bc0_x = slope_b0s.x;
+            F256      slope_bc1_x = slope_b0s.y;
+            F256      slope_bc2_x = slope_b0s.z;
+            F256      slope_bc0_y = slope_b1s.x;
+            F256      slope_bc1_y = slope_b1s.y;
+            F256      slope_bc2_y = slope_b1s.z;
+
+            F256      bc00        = _mm256_set_ps(
+                b0s.x, b0s.x + slope_b0s.x, b0s.x + slope_b0s.x * 2.f, b0s.x + slope_b0s.x * 3.f,
+                b0s.x + slope_b0s.x * 4.f, b0s.x + slope_b0s.x * 5.f, b0s.x + slope_b0s.x * 6.f,
+                b0s.x + slope_b0s.x * 7.f
+            );
+            F256 bc10 = _mm256_set_ps(
+                b0s.y, b0s.y + slope_b0s.y, b0s.y + slope_b0s.y * 2.f, b0s.y + slope_b0s.y * 3.f,
+                b0s.y + slope_b0s.y * 4.f, b0s.y + slope_b0s.y * 5.f, b0s.y + slope_b0s.y * 6.f,
+                b0s.y + slope_b0s.y * 7.f
+            );
+            F256 bc20 = _mm256_set_ps(
+                b0s.z, b0s.z + slope_b0s.z, b0s.z + slope_b0s.z * 2.f, b0s.z + slope_b0s.z * 3.f,
+                b0s.z + slope_b0s.z * 4.f, b0s.z + slope_b0s.z * 5.f, b0s.z + slope_b0s.z * 6.f,
+                b0s.z + slope_b0s.z * 7.f
+            );
+
+            Program& program = state.program();
+            u64      row     = u64(y0) * color_buffer.width();
+            u32      y_step  = 0;
+            u32*     pixels  = color_buffer.data();
+
+            for (f32 y = std::trunc(y0); y < std::trunc(y1);
+                 ++y, ++y_step, row += color_buffer.width()) {
+
+                F256 bc0 = bc00;
+                F256 bc1 = bc10;
+                F256 bc2 = bc20;
+
+                u32  xl  = slope_xl * y_step + x0;
+                u32  xr  = slope_xr * y_step + x1;
+
+                u32  sx0 = (xl + 7) & ~7;
+                u32  sx1 = xr & ~7;
+
+                for (u32 x = xl; x < sx0; ++x) {
+                    // pixels[row + x] = glm::packUnorm4x8(glm::vec4(1.f, bc2[0], bc1[0], bc0[0]));
+                    pixels[row + x] = 0xff0000ff;
+                    bc0 += slope_bc0_x;
+                    bc1 += slope_bc1_x;
+                    bc2 += slope_bc2_x;
+                }
+
+                F256 f255    = 255.f;
+                U256 mask    = ~0;
+
+                // simd range, 32-byte aligned
+                auto cluster = reinterpret_cast<__m256i*>(pixels + row + sx0);
+
+                for (u32 x = sx0; x < sx1; x += 8, ++cluster) {
+
+                    interleave_rgb(U256(bc0 * f255), U256(bc1 * f255), U256(bc2 * f255))
+                        .store_aligned(cluster);
+
+                    bc0 += slope_bc0_x * 8;
+                    bc1 += slope_bc1_x * 8;
+                    bc2 += slope_bc2_x * 8;
+                }
+
+                for (u32 x = sx1; x < xr; ++x) {
+                    // pixels[row + x] = glm::packUnorm4x8(glm::vec4(1.f, bc2[0], bc1[0], bc0[0]));
+                    pixels[row + x] = 0x0000ffff;
+                    bc0 += slope_bc0_x;
+                    bc1 += slope_bc1_x;
+                    bc2 += slope_bc2_x;
+                }
+
+                bc00 += slope_bc0_y;
+                bc10 += slope_bc1_y;
+                bc20 += slope_bc2_y;
+            }
+        };
+
         // flat top
         if (u32(p0.y) == u32(p1.y)) {
             auto [left, right] = std::minmax(p0, p1, vec_x_less);
-            std::apply(rasterize, get_flat_top_slopes(left, right, p2));
+            std::apply(rasterize_simd, get_flat_top_slopes(left, right, p2));
         }
 
         // flat bottom
         else if (u32(p1.y) == u32(p2.y)) {
             auto [left, right] = std::minmax(p1, p2, vec_x_less);
-            std::apply(rasterize, get_flat_bottom_slopes(p0, left, right));
+            std::apply(rasterize_simd, get_flat_bottom_slopes(p0, left, right));
         }
 
         // general
@@ -137,8 +228,8 @@ namespace rohan {
             glm::vec4 p3       = p0 + amount * (p2 - p0);
 
             auto [left, right] = std::minmax(p1, p3, vec_x_less);
-            std::apply(rasterize, get_flat_bottom_slopes(p0, left, right));
-            std::apply(rasterize, get_flat_top_slopes(left, right, p2));
+            std::apply(rasterize_simd, get_flat_bottom_slopes(p0, left, right));
+            std::apply(rasterize_simd, get_flat_top_slopes(left, right, p2));
         }
     }
 

@@ -11,7 +11,7 @@ set_target_properties(rohan_test PROPERTIES
 	CXX_EXTENSIONS OFF
 )
 
-target_compile_options(rohan_test PRIVATE ${OPTIMIZATIONS} -Wall -Wextra -Wpedantic)
+target_compile_options(rohan_test PRIVATE ${OPTIMIZATIONS} -Wall -Wextra -Wpedantic -march=native)
 add_subdirectory ("vendor/SDL" EXCLUDE_FROM_ALL)
 target_link_libraries(rohan_test PRIVATE rohan SDL3::SDL3)
 

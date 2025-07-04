@@ -32,17 +32,14 @@ int main() {
     rohan::Program program = {
         {},
         [](const rohan::UniformBuffer& ub, uint64_t index, uint32_t& out) {
-            out = ub.get_uniform<uint32_t>("secret_color");
-            // auto bc = ub.get_uniform<glm::vec3>(0);
-            // out     = glm::packUnorm4x8(glm::vec4(1.f, bc));
+            auto bc = ub.get_uniform<glm::vec3>("bc");
+            out     = glm::packUnorm4x8(glm::vec4(1.f, bc));
         },
         [](const rohan::UniformBuffer& ub, uint64_t index, const glm::vec4& in) { return in; },
     };
     state.program(program);
 
-    program.uniforms.push_uniform<uint32_t>(0xff0000ff, "secret_color");
-
-    uint32_t              width = 480, height = 300;
+    uint32_t              width = 1440, height = 900;
     rohan::FrameU32       color_buffer(width, height);
     rohan::FrameF32       depth_buffer(width, height);
 
@@ -60,6 +57,10 @@ int main() {
     SDL_SetTextureScaleMode(frame, SDL_SCALEMODE_NEAREST);
     SDL_SetTextureBlendMode(frame, SDL_BLENDMODE_NONE);
     SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+
+    float    total_ms     = 0.f;
+    uint64_t total_frames = 0;
 
     for (auto keys = SDL_GetKeyboardState(nullptr); !keys[SDL_SCANCODE_Q]; SDL_PumpEvents()) {
         auto t0 = std::chrono::system_clock::now();
@@ -97,9 +98,13 @@ int main() {
         );
 
         SDL_RenderPresent(renderer);
-        std::fill_n(depth_buffer.data(), depth_buffer.count(), 1.f);
-        std::fill_n(color_buffer.data(), color_buffer.count(), 0);
+        SDL_RenderClear(renderer);
+        std::fill_n(color_buffer.data(), color_buffer.count(), 0x000000ff);
+
+        total_ms += frametime_ms;
+        total_frames += 1;
     }
 
+    printf("average perf: %.4f ms\n", total_ms / total_frames);
     return 0;
 }

@@ -2,11 +2,12 @@
 #define ROHAN_STATE_HPP_
 
 #include "config.hpp"
+#include "rhdefs.hpp"
 #include "shader_type.hpp"
 
 namespace rohan {
 
-    class RenderState {
+    class RAPI RenderState {
       public:
 
         RenderConfig& config() noexcept;
