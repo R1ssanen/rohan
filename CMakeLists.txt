@@ -25,4 +25,4 @@ target_compile_options(rohan PRIVATE
 )
 
 find_package(SDL3 REQUIRED)
-target_link_libraries(rohan PRIVATE SDL3::SDL3)
+target_link_libraries(rohan PRIVATE m SDL3::SDL3)
