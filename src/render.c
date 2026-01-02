@@ -1,244 +1,333 @@
 #include "render.h"
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
-#include "rmath.h"
-#include "simd.h"
+#include "barycentric.h"
+#include "simd/rvm.h"
 
-#define swapf(a, b)                                                            \
-  do {                                                                         \
-    float tmp = a;                                                             \
-    a = b;                                                                     \
-    b = tmp;                                                                   \
-  } while (0)
+#define swapf(a, b)                                                                                                    \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        float tmp = a;                                                                                                 \
+        a = b;                                                                                                         \
+        b = tmp;                                                                                                       \
+    } while (0)
 
-#define swapi(a, b)                                                            \
-  do {                                                                         \
-    int tmp = a;                                                               \
-    a = b;                                                                     \
-    b = tmp;                                                                   \
-  } while (0)
+static rveci prefix_masks[8];
+static rveci postfix_masks[8];
+static rveci infix_masks[8][8];
+static rvecf multiplier_masks[8];
 
-typedef struct interpolant interpolant;
-struct interpolant {
-  float p0;
-  float dx;
-  float dy;
-};
+void rohan_initialize(void)
+{
+    prefix_masks[0] = rveci_i32(-1);
+    prefix_masks[1] = rveci_set_i32(0, -1, -1, -1, -1, -1, -1, -1);
+    prefix_masks[2] = rveci_set_i32(0, 0, -1, -1, -1, -1, -1, -1);
+    prefix_masks[3] = rveci_set_i32(0, 0, 0, -1, -1, -1, -1, -1);
+    prefix_masks[4] = rveci_set_i32(0, 0, 0, 0, -1, -1, -1, -1);
+    prefix_masks[5] = rveci_set_i32(0, 0, 0, 0, 0, -1, -1, -1);
+    prefix_masks[6] = rveci_set_i32(0, 0, 0, 0, 0, 0, -1, -1);
+    prefix_masks[7] = rveci_set_i32(0, 0, 0, 0, 0, 0, 0, -1);
 
-static inline float step_x(interpolant interpolant, int i) {
-  return fmaf(interpolant.dx, i, interpolant.p0);
+    postfix_masks[0] = rveci_i32(-1);
+    postfix_masks[1] = rveci_set_i32(-1, -1, -1, -1, -1, -1, -1, 0);
+    postfix_masks[2] = rveci_set_i32(-1, -1, -1, -1, -1, -1, 0, 0);
+    postfix_masks[3] = rveci_set_i32(-1, -1, -1, -1, -1, 0, 0, 0);
+    postfix_masks[4] = rveci_set_i32(-1, -1, -1, -1, 0, 0, 0, 0);
+    postfix_masks[5] = rveci_set_i32(-1, -1, -1, 0, 0, 0, 0, 0);
+    postfix_masks[6] = rveci_set_i32(-1, -1, 0, 0, 0, 0, 0, 0);
+    postfix_masks[7] = rveci_set_i32(-1, 0, 0, 0, 0, 0, 0, 0);
+
+    infix_masks[0][0] = rveci_set_i32(-1, 0, 0, 0, 0, 0, 0, 0);
+    infix_masks[0][1] = rveci_set_i32(-1, -1, 0, 0, 0, 0, 0, 0);
+    infix_masks[0][2] = rveci_set_i32(-1, -1, -1, 0, 0, 0, 0, 0);
+    infix_masks[0][3] = rveci_set_i32(-1, -1, -1, -1, 0, 0, 0, 0);
+    infix_masks[0][4] = rveci_set_i32(-1, -1, -1, -1, -1, 0, 0, 0);
+    infix_masks[0][5] = rveci_set_i32(-1, -1, -1, -1, -1, -1, 0, 0);
+    infix_masks[0][6] = rveci_set_i32(-1, -1, -1, -1, -1, -1, -1, 0);
+    infix_masks[0][7] = rveci_set_i32(-1, -1, -1, -1, -1, -1, -1, -1);
+    infix_masks[1][1] = rveci_set_i32(0, -1, 0, 0, 0, 0, 0, 0);
+    infix_masks[1][2] = rveci_set_i32(0, -1, -1, 0, 0, 0, 0, 0);
+    infix_masks[1][3] = rveci_set_i32(0, -1, -1, -1, 0, 0, 0, 0);
+    infix_masks[1][4] = rveci_set_i32(0, -1, -1, -1, -1, 0, 0, 0);
+    infix_masks[1][5] = rveci_set_i32(0, -1, -1, -1, -1, -1, 0, 0);
+    infix_masks[1][6] = rveci_set_i32(0, -1, -1, -1, -1, -1, -1, 0);
+    infix_masks[1][7] = rveci_set_i32(0, -1, -1, -1, -1, -1, -1, -1);
+    infix_masks[2][2] = rveci_set_i32(0, 0, -1, 0, 0, 0, 0, 0);
+    infix_masks[2][3] = rveci_set_i32(0, 0, -1, -1, 0, 0, 0, 0);
+    infix_masks[2][4] = rveci_set_i32(0, 0, -1, -1, -1, 0, 0, 0);
+    infix_masks[2][5] = rveci_set_i32(0, 0, -1, -1, -1, -1, 0, 0);
+    infix_masks[2][6] = rveci_set_i32(0, 0, -1, -1, -1, -1, -1, 0);
+    infix_masks[2][7] = rveci_set_i32(0, 0, -1, -1, -1, -1, -1, -1);
+    infix_masks[3][3] = rveci_set_i32(0, 0, 0, -1, 0, 0, 0, 0);
+    infix_masks[3][4] = rveci_set_i32(0, 0, 0, -1, -1, 0, 0, 0);
+    infix_masks[3][5] = rveci_set_i32(0, 0, 0, -1, -1, -1, 0, 0);
+    infix_masks[3][6] = rveci_set_i32(0, 0, 0, -1, -1, -1, -1, 0);
+    infix_masks[3][7] = rveci_set_i32(0, 0, 0, -1, -1, -1, -1, -1);
+    infix_masks[4][4] = rveci_set_i32(0, 0, 0, 0, -1, 0, 0, 0);
+    infix_masks[4][5] = rveci_set_i32(0, 0, 0, 0, -1, -1, 0, 0);
+    infix_masks[4][6] = rveci_set_i32(0, 0, 0, 0, -1, -1, -1, 0);
+    infix_masks[4][7] = rveci_set_i32(0, 0, 0, 0, -1, -1, -1, -1);
+    infix_masks[5][5] = rveci_set_i32(0, 0, 0, 0, 0, -1, 0, 0);
+    infix_masks[5][6] = rveci_set_i32(0, 0, 0, 0, 0, -1, -1, 0);
+    infix_masks[5][7] = rveci_set_i32(0, 0, 0, 0, 0, -1, -1, -1);
+    infix_masks[6][6] = rveci_set_i32(0, 0, 0, 0, 0, 0, -1, 0);
+    infix_masks[6][7] = rveci_set_i32(0, 0, 0, 0, 0, 0, -1, -1);
+    infix_masks[7][7] = rveci_set_i32(0, 0, 0, 0, 0, 0, 0, -1);
+
+    multiplier_masks[0] = rvecf_set_f32(0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f);
+    multiplier_masks[1] = rvecf_set_f32(-1.f, 0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f);
+    multiplier_masks[2] = rvecf_set_f32(-2.f, -1.f, 0.f, 1.f, 2.f, 3.f, 4.f, 5.f);
+    multiplier_masks[3] = rvecf_set_f32(-3.f, -2.f, -1.f, 0.f, 1.f, 2.f, 3.f, 4.f);
+    multiplier_masks[4] = rvecf_set_f32(-4.f, -3.f, -2.f, -1.f, 0.f, 1.f, 2.f, 3.f);
+    multiplier_masks[5] = rvecf_set_f32(-5.f, -4.f, -3.f, -2.f, -1.f, 0.f, 1.f, 2.f);
+    multiplier_masks[6] = rvecf_set_f32(-6.f, -5.f, -4.f, -3.f, -2.f, -1.f, 0.f, 1.f);
+    multiplier_masks[7] = rvecf_set_f32(-7.f, -6.f, -5.f, -4.f, -3.f, -2.f, -1.f, 0.f);
 }
 
-static inline float step_y(interpolant interpolant, int i) {
-  return fmaf(interpolant.dy, i, interpolant.p0);
+static inline void advance(rohan_raster_state *restrict state, rohan_shader_object *restrict shader, rvecf dx_b0,
+                           rvecf dx_b1, rvecf dx_b2)
+{
+    shader->shader(shader->instance, state);
+    state->index += 8;
+    state->pos.x = rvm_add_f32(state->pos.x, rvecf_f32(8));
+    state->weight.x = rvm_add_f32(state->weight.x, dx_b0);
+    state->weight.y = rvm_add_f32(state->weight.y, dx_b1);
+    state->weight.z = rvm_add_f32(state->weight.z, dx_b2);
 }
 
-static void rasterize_triangle(int *pixels, int w, bary bary,
-                               interpolant x_left, interpolant x_right,
-                               float y_top, float y_bottom) {
+static void rasterize_triangle(rohan_shader_object *shader, const barycentrics *bary, float x_left, float dxdy_x_left,
+                               float x_right, float dxdy_x_right, float y_top, float y_bottom)
+{
+    rohan_raster_state state;
+    state.pos.y = rvecf_f32(y_top);
+    size_t row = (int)y_top * shader->max_w;
 
-  __m256i draw_mask;
-  size_t row = (int)y_top * w;
+    rvecf b0_0, b1_0, b2_0;
+    get_weights(bary, x_left, y_top, &b0_0, &b1_0, &b2_0);
 
-  float b0, b1, b2;
-  get_coords(bary, x_left.p0, y_top, &b0, &b1, &b2);
+    rvecf dx_b0 = bary->dx_b0;
+    rvecf dx_b1 = bary->dx_b1;
+    rvecf dx_b2 = bary->dx_b2;
 
-  for (int i = 0; i < (int)y_bottom - (int)y_top; ++i, row += w) {
-    int x0 = step_y(x_left, i), x1 = step_y(x_right, i);
-    int x0_aligned = x0 & ~7, x1_aligned = x1 & ~7;
-    int header = x0 - x0_aligned;
+    rvecf dy_b0 = rvm_fma_f32(bary->dx_b0, rvecf_f32(dxdy_x_left), bary->dy_b0);
+    rvecf dy_b1 = rvm_fma_f32(bary->dx_b1, rvecf_f32(dxdy_x_left), bary->dy_b1);
+    rvecf dy_b2 = rvm_fma_f32(bary->dx_b2, rvecf_f32(dxdy_x_left), bary->dy_b2);
 
-    float b0_start = fmaf(bary.dy_b0, i, b0);
-    float b1_start = fmaf(bary.dy_b1, i, b1);
-    float b2_start = fmaf(bary.dy_b2, i, b2);
+    rvecf eight = rvecf_f32(8.f);
+    rvecf dx_b0_cluster = rvm_mul_f32(dx_b0, eight);
+    rvecf dx_b1_cluster = rvm_mul_f32(dx_b1, eight);
+    rvecf dx_b2_cluster = rvm_mul_f32(dx_b2, eight);
 
-    for (int x = x0; x <= x1; ++x) {
-      // get_coords(bary, x, y_top + i, &b0_start, &b1_start, &b2_start);
+    rvecf seq = rvecf_set_f32(0, 1, 2, 3, 4, 5, 6, 7);
+    rvecf lines = rvecf_f32(0.f);
 
-      int red = 255.f * b0_start;
-      int green = 255.f * b1_start;
-      int blue = 255.f * b2_start;
-      int alpha = 255;
+    for (int i = 0; i < (int)y_bottom - (int)y_top;
+         ++i, row += shader->max_w, state.pos.y = rvm_increment_f32(state.pos.y), lines = rvm_increment_f32(lines))
+    {
+        int x0 = floorf(fmaf(dxdy_x_left, i, x_left));
+        int x1 = ceilf(fmaf(dxdy_x_right, i, x_right)) - 1.f;
+        int x0_aligned = x0 & ~7;
+        int x1_aligned = x1 & ~7;
+        int header = x0 - x0_aligned;
 
-      pixels[row + x] = (alpha << 24) | (blue << 16) | (green << 8) | red;
+        state.index = row + x0_aligned;
+        state.pos.x = rvm_add_f32(seq, rvecf_f32(x0_aligned));
 
-      b0_start += bary.dx_b0;
-      b1_start += bary.dx_b1;
-      b2_start += bary.dx_b2;
+        rvecf multiplier_mask = multiplier_masks[header];
+        state.weight.x = rvm_fma_f32(dx_b0, multiplier_mask, rvm_fma_f32(dy_b0, lines, b0_0));
+        state.weight.y = rvm_fma_f32(dx_b1, multiplier_mask, rvm_fma_f32(dy_b1, lines, b1_0));
+        state.weight.z = rvm_fma_f32(dx_b2, multiplier_mask, rvm_fma_f32(dy_b2, lines, b2_0));
+
+        if (x0_aligned == x1_aligned)
+        {
+            state.mask = infix_masks[header][x1 - x0_aligned];
+            shader->shader(shader->instance, &state);
+        }
+        else
+        {
+            state.mask = prefix_masks[header];
+            advance(&state, shader, dx_b0_cluster, dx_b1_cluster, dx_b2_cluster);
+            state.mask = rveci_i32(-1);
+
+            for (int j = 1; j < (x1_aligned - x0_aligned) >> 3; ++j)
+            {
+                advance(&state, shader, dx_b0_cluster, dx_b1_cluster, dx_b2_cluster);
+            }
+
+            state.mask = postfix_masks[(x1_aligned + 7) - x1];
+            shader->shader(shader->instance, &state);
+        }
     }
-    continue;
-
-    __m256 multiplier_mask = multiplier_masks[header];
-    __m256 b0_step = _mm256_set1_ps(bary.dx_b0 * 8.f);
-    __m256 b1_step = _mm256_set1_ps(bary.dx_b1 * 8.f);
-    __m256 b2_step = _mm256_set1_ps(bary.dx_b2 * 8.f);
-
-    __m256 b0_1 = _mm256_fmadd_ps(_mm256_set1_ps(bary.dx_b0), multiplier_mask,
-                                  _mm256_set1_ps(b0_start));
-    __m256 b1_1 = _mm256_fmadd_ps(_mm256_set1_ps(bary.dx_b1), multiplier_mask,
-                                  _mm256_set1_ps(b1_start));
-    __m256 b2_1 = _mm256_fmadd_ps(_mm256_set1_ps(bary.dx_b2), multiplier_mask,
-                                  _mm256_set1_ps(b2_start));
-
-    if (x0_aligned == x1_aligned) {
-      draw_mask = infix_masks[header * 8 + (x1 - x0_aligned)];
-      _mm256_maskstore_epi32(pixels + row + x0_aligned, draw_mask,
-                             channels_to_rgba(b0_1, b1_1, b2_1));
-      continue;
-    }
-
-    draw_mask = prefix_masks[header];
-    _mm256_maskstore_epi32(pixels + row + x0_aligned, draw_mask,
-                           channels_to_rgba(b0_1, b1_1, b2_1));
-
-    b0_1 = _mm256_add_ps(b0_1, b0_step);
-    b1_1 = _mm256_add_ps(b1_1, b1_step);
-    b2_1 = _mm256_add_ps(b2_1, b2_step);
-
-    __m256i all = _mm256_set1_epi32(~0);
-    draw_mask = all;
-
-    for (int x = x0_aligned + 8; x < x1_aligned; x += 8) {
-      _mm256_maskstore_epi32(pixels + row + x, draw_mask,
-                             channels_to_rgba(b0_1, b1_1, b2_1));
-
-      b0_1 = _mm256_add_ps(b0_1, b0_step);
-      b1_1 = _mm256_add_ps(b1_1, b1_step);
-      b2_1 = _mm256_add_ps(b2_1, b2_step);
-    }
-
-    draw_mask = postfix_masks[(x1_aligned + 7) - x1];
-    _mm256_maskstore_epi32(pixels + row + x1_aligned, draw_mask,
-                           channels_to_rgba(b0_1, b1_1, b2_1));
-  }
 }
 
-void render_triangle(int *pixels, int w, float x0, float y0, float x1, float y1,
-                     float x2, float y2) {
-  bary bary;
-  if (!get_bary(x0, y0, x1, y1, x2, y2, &bary))
-    return;
+void render_triangle(rohan_shader_object *shader, float x0, float y0, float x1, float y1, float x2, float y2)
+{
+    barycentrics bary;
+    if (!get_barycentrics(x0, y0, x1, y1, x2, y2, true, &bary))
+    {
+        return;
+    }
 
-  if (y0 > y1) {
-    swapf(x0, x1);
-    swapf(y0, y1);
-  }
+    if (y0 > y1)
+    {
+        swapf(x0, x1);
+        swapf(y0, y1);
+    }
+    if (y1 > y2)
+    {
+        swapf(x1, x2);
+        swapf(y1, y2);
+    }
+    if (y0 > y1)
+    {
+        swapf(x0, x1);
+        swapf(y0, y1);
+    }
 
-  if (y1 > y2) {
-    swapf(x1, x2);
-    swapf(y1, y2);
-  }
+    float inv_dy_ac = 1.f / (y2 - y0);
 
-  if (y0 > y1) {
-    swapf(x0, x1);
-    swapf(y0, y1);
-  }
+    if ((int)y0 == (int)y1) // flat top
+    {
+        float dxdy_left = (x2 - x0) * inv_dy_ac;
+        float dxdy_right = (x2 - x1) * inv_dy_ac;
 
-  float inv_dy = 1.f / (y2 - y0);
+        if (x0 < x1)
+        {
+            rasterize_triangle(shader, &bary, x0, dxdy_left, x1, dxdy_right, y0, y2);
+        }
+        else
+        {
+            rasterize_triangle(shader, &bary, x1, dxdy_right, x0, dxdy_left, y0, y2);
+        }
+    }
 
-  if ((int)y0 == (int)y1) // flat top
-  {
-    if (x0 > x1)
-      swapf(x0, x1);
+    else if ((int)y1 == (int)y2) // flat bottom
+    {
+        float dxdy_left = (x1 - x0) * inv_dy_ac;
+        float dxdy_right = (x2 - x0) * inv_dy_ac;
 
-    interpolant x_left = {x0, 0.f, (x2 - x0) * inv_dy};
-    interpolant x_right = {x1, 0.f, (x2 - x1) * inv_dy};
+        if (x1 < x2)
+        {
+            rasterize_triangle(shader, &bary, x0, dxdy_left, x0, dxdy_right, y0, y2);
+        }
+        else
+        {
+            rasterize_triangle(shader, &bary, x0, dxdy_right, x0, dxdy_left, y0, y2);
+        }
+    }
 
-    rasterize_triangle(pixels, w, bary, x_left, x_right, y0, y2);
-    return;
-  }
+    else
+    {
+        float dy_ab = y1 - y0;
+        float dxdy_ac = (x2 - x0) * inv_dy_ac;
+        float x3 = fmaf(dxdy_ac, dy_ab, x0);
 
-  if ((int)y1 == (int)y2) // flat bottom
-  {
-    if (x1 > x2)
-      swapf(x1, x2);
+        float dxdy_top = (x1 - x0) / dy_ab;
+        float dxdy_bottom = (x2 - x1) / (y2 - y1);
 
-    interpolant x_left = {x0, 0.f, (x1 - x0) * inv_dy};
-    interpolant x_right = {x0, 0.f, (x2 - x0) * inv_dy};
-
-    rasterize_triangle(pixels, w, bary, x_left, x_right, y0, y2);
-    return;
-  }
-
-  float dx_ac = (x2 - x0) * inv_dy;
-  float dy_ab = y1 - y0;
-  float x3 = fmaf(dx_ac, dy_ab, x0);
-
-  interpolant x_top_a = {x0, 0.f, (x1 - x0) / dy_ab};
-  interpolant x_top_b = {x0, 0.f, dx_ac};
-  interpolant x_bottom_a = {x1, 0.f, (x2 - x1) / (y2 - y1)};
-  interpolant x_bottom_b = {x3, 0.f, dx_ac};
-
-  if (x1 < x3) // unified right side
-  {
-    rasterize_triangle(pixels, w, bary, x_top_a, x_top_b, y0, y1);
-    rasterize_triangle(pixels, w, bary, x_bottom_a, x_bottom_b, y1, y2);
-  } else // unified left side
-  {
-    rasterize_triangle(pixels, w, bary, x_top_b, x_top_a, y0, y1);
-    rasterize_triangle(pixels, w, bary, x_bottom_b, x_bottom_a, y1, y2);
-  }
+        if (x1 < x3)
+        {
+            rasterize_triangle(shader, &bary, x0, dxdy_top, x0, dxdy_ac, y0, y1);
+            rasterize_triangle(shader, &bary, x1, dxdy_bottom, x3, dxdy_ac, y1, y2);
+        }
+        else
+        {
+            rasterize_triangle(shader, &bary, x0, dxdy_ac, x0, dxdy_top, y0, y1);
+            rasterize_triangle(shader, &bary, x3, dxdy_ac, x1, dxdy_bottom, y1, y2);
+        }
+    }
 }
 
-void render_line(int *pixels, int w, int x0, int y0, int x1, int y1,
-                 int color) {
+/*
+void render_line(int *pixels, int w, int x0, int y0, int x1, int y1, int color)
+{
+    int dx = x1 - x0;
+    if (dx == 0)
+    { // vertical
 
-  int dx = x1 - x0;
-  if (dx == 0) { // vertical
+        int miny, maxy;
+        if (y0 > y1)
+        {
+            miny = y1;
+            maxy = y0;
+        }
+        else
+        {
+            miny = y0;
+            maxy = y1;
+        }
 
-    int miny, maxy;
-    if (y0 > y1) {
-      miny = y1;
-      maxy = y0;
-    } else {
-      miny = y0;
-      maxy = y1;
+        size_t index = miny * w + x0;
+        for (int y = miny; y < maxy; ++y)
+        {
+            pixels[index] = color;
+            index += w;
+        }
+        return;
     }
 
-    size_t index = miny * w + x0;
-    for (int y = miny; y < maxy; ++y) {
-      pixels[index] = color;
-      index += w;
-    }
-    return;
-  }
-
-  int dy = y1 - y0;
-  if (dy == 0) { // horizontal
-    int minx = x0 > x1 ? x1 : x0;
-    size_t begin = y0 * w + minx;
-    memset(pixels + begin, abs(dx), color);
-    return;
-  }
-
-  if (abs(dx) > abs(dy)) { // gentle slope < 45deg
-    if (x0 > x1) {
-      swapi(x0, x1);
-      y0 = y1;
+    int dy = y1 - y0;
+    if (dy == 0)
+    { // horizontal
+        int minx = x0 > x1 ? x1 : x0;
+        size_t begin = y0 * w + minx;
+        memset(pixels + begin, abs(dx), color);
+        return;
     }
 
-    float slope = (float)dy / (float)dx;
-    float y = y0;
+    if (abs(dx) > abs(dy))
+    { // gentle slope < 45deg
+        if (x0 > x1)
+        {
+            swapi(x0, x1);
+            y0 = y1;
+        }
 
-    for (int x = x0; x < x1; ++x, y += slope)
-      pixels[(int)y * w + x] = color;
-  }
+        float slope = (float)dy / (float)dx;
+        float y = y0;
 
-  else { // steep slope >= 45deg
-    if (y0 > y1) {
-      swapi(y0, y1);
-      x0 = x1;
+        for (int x = x0; x < x1; ++x, y += slope)
+            pixels[(int)y * w + x] = color;
     }
 
-    float slope = (float)dx / (float)dy;
-    size_t row = y0 * w;
-    float x = x0;
+    else
+    { // steep slope >= 45deg
+        if (y0 > y1)
+        {
+            swapi(y0, y1);
+            x0 = x1;
+        }
 
-    for (int y = y0; y < y1; ++y, x += slope) {
-      pixels[row + (int)x] = color;
-      row += w;
+        float slope = (float)dx / (float)dy;
+        size_t row = y0 * w;
+        float x = x0;
+
+        for (int y = y0; y < y1; ++y, x += slope)
+        {
+            pixels[row + (int)x] = color;
+            row += w;
+        }
     }
-  }
+}
+*/
+
+void rohan_render(rohan_shader_object *shader, const float *vertices, const int *indices, size_t index_count,
+                  rohan_render_mode __UNUSED_PARAM(mode))
+{
+    const float N = 16.f;
+    const float inv_N = 1.f / N;
+
+    for (size_t i = 0; i < index_count; i += 3)
+    {
+        const float *v0 = vertices + indices[i + 0] * 2;
+        const float *v1 = vertices + indices[i + 1] * 2;
+        const float *v2 = vertices + indices[i + 2] * 2;
+
+        render_triangle(shader, nearbyintf(v0[0] * N) * inv_N, nearbyintf(v0[1] * N) * inv_N,
+                        nearbyintf(v1[0] * N) * inv_N, nearbyintf(v1[1] * N) * inv_N, nearbyintf(v2[0] * N) * inv_N,
+                        nearbyintf(v2[1] * N) * inv_N);
+    }
 }
