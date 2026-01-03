@@ -6,6 +6,7 @@
 
 #include "shader.h"
 #include "simd/rvm.h"
+#include "type.h"
 
 #define swapf(a, b)                                                                                                    \
     do                                                                                                                 \
@@ -95,7 +96,7 @@ void rohan_initialize(void)
     multiplier_masks[7] = rvecf_set_f32(-7.f, -6.f, -5.f, -4.f, -3.f, -2.f, -1.f, 0.f);
 }
 
-static inline void advance(rohan_raster_state *restrict state, rohan_shader_object *restrict shader,
+static inline void advance(rohan_raster_state *ROHAN_RESTRICT state, rohan_shader_object *ROHAN_RESTRICT shader,
                            const rvecf *dattr_dx)
 {
     shader->main(shader->instance, state);
@@ -108,8 +109,8 @@ static inline void advance(rohan_raster_state *restrict state, rohan_shader_obje
     }
 }
 
-static void rasterize_triangle(rohan_shader_object *shader, int width, const float *restrict attr_0,
-                               const rvecf *restrict dattr_dx, const rvecf *restrict dattr_dy, float x_left,
+static void rasterize_triangle(rohan_shader_object *shader, int width, const float *ROHAN_RESTRICT attr_0,
+                               const rvecf *ROHAN_RESTRICT dattr_dx, const rvecf *ROHAN_RESTRICT dattr_dy, float x_left,
                                float dx_dy_left, float x_right, float dx_dy_right, float y_top, float y_bottom)
 {
     rohan_raster_state state;
@@ -176,9 +177,9 @@ static void rasterize_triangle(rohan_shader_object *shader, int width, const flo
     }
 }
 
-static void render_triangle(rohan_shader_object *shader, int width, float x0, float y0, float x1, float y1, float x2,
-                            float y2, const float *restrict attr_0, const float *restrict attr_1,
-                            const float *restrict attr_2)
+void rohan_render_triangle_raw(rohan_shader_object *shader, int width, float x0, float y0, float x1, float y1, float x2,
+                               float y2, const float *ROHAN_RESTRICT attr_0, const float *ROHAN_RESTRICT attr_1,
+                               const float *ROHAN_RESTRICT attr_2)
 {
     if (y0 > y1)
     {
@@ -312,13 +313,13 @@ static void render_triangle(rohan_shader_object *shader, int width, float x0, fl
 }
 
 static void render_line(rohan_shader_object *shader, int width, float x0, float y0, float x1, float y1,
-                        const float *restrict attr_0, const float *restrict attr_1)
+                        const float *ROHAN_RESTRICT attr_0, const float *ROHAN_RESTRICT attr_1)
 {
     return;
 }
 
-void rohan_render(rohan_shader_object *restrict shader, int width, const float *restrict vertices,
-                  const int *restrict indices, size_t index_count, int mode)
+void rohan_render(rohan_shader_object *ROHAN_RESTRICT shader, int width, const float *ROHAN_RESTRICT vertices,
+                  const int *ROHAN_RESTRICT indices, size_t index_count, int mode)
 {
     int attribs = 2 + shader->attribute_count;
     const float *v0, *v1, *v2, *v3;
@@ -361,7 +362,7 @@ void rohan_render(rohan_shader_object *restrict shader, int width, const float *
             v0 = vertices + indices[i] * attribs;
             v1 = vertices + indices[i + 1] * attribs;
             v2 = vertices + indices[i + 2] * attribs;
-            render_triangle(shader, width, v0[0], v0[1], v1[0], v1[1], v2[0], v2[1], v0 + 2, v1 + 2, v2 + 2);
+            rohan_render_triangle_raw(shader, width, v0[0], v0[1], v1[0], v1[1], v2[0], v2[1], v0 + 2, v1 + 2, v2 + 2);
         }
         break;
 
@@ -371,7 +372,7 @@ void rohan_render(rohan_shader_object *restrict shader, int width, const float *
         {
             v1 = vertices + indices[i] * attribs;
             v2 = vertices + indices[i + 1] * attribs;
-            render_triangle(shader, width, v0[0], v0[1], v1[0], v1[1], v2[0], v2[1], v0 + 2, v1 + 2, v2 + 2);
+            rohan_render_triangle_raw(shader, width, v0[0], v0[1], v1[0], v1[1], v2[0], v2[1], v0 + 2, v1 + 2, v2 + 2);
         }
         break;
 
@@ -382,8 +383,8 @@ void rohan_render(rohan_shader_object *restrict shader, int width, const float *
             v1 = vertices + indices[i + 1] * attribs;
             v2 = vertices + indices[i + 2] * attribs;
             v3 = vertices + indices[i + 3] * attribs;
-            render_triangle(shader, width, v0[0], v0[1], v1[0], v1[1], v2[0], v2[1], v0 + 2, v1 + 2, v2 + 2);
-            render_triangle(shader, width, v0[0], v0[1], v2[0], v2[1], v3[0], v3[1], v0 + 2, v2 + 2, v3 + 2);
+            rohan_render_triangle_raw(shader, width, v0[0], v0[1], v1[0], v1[1], v2[0], v2[1], v0 + 2, v1 + 2, v2 + 2);
+            rohan_render_triangle_raw(shader, width, v0[0], v0[1], v2[0], v2[1], v3[0], v3[1], v0 + 2, v2 + 2, v3 + 2);
         }
         break;
 

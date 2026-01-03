@@ -1,6 +1,11 @@
 #ifndef ROHAN_SIMD_INT_H_
 #define ROHAN_SIMD_INT_H_
 
+#if defined __cplusplus
+extern "C"
+{
+#endif
+
 #if !defined __AVX2__
 #error "AVX2 instructions required."
 #else
@@ -320,5 +325,9 @@ static inline rveci rvm_permute_i32(rveci a, rveci mask)
 
 #define rvm_shuffle_i8(a, mask) _mm256_shuffle_epi8(a, mask)
 
+#endif
+
+#if defined __cplusplus
+}
 #endif
 #endif

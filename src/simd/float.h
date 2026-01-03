@@ -1,6 +1,11 @@
 #ifndef ROHAN_SIMD_FLOAT_H_
 #define ROHAN_SIMD_FLOAT_H_
 
+#if defined __cplusplus
+extern "C"
+{
+#endif
+
 #if !defined __AVX2__
 #error "AVX2 instructions required."
 #else
@@ -214,5 +219,9 @@ static inline rvecf rvm_permute_f32(rvecf a, rveci mask)
 
 #define rvm_increment_f32(a) a = _mm256_add_ps(a, _mm256_set1_ps(1.f))
 
+#endif
+
+#if defined __cplusplus
+}
 #endif
 #endif
