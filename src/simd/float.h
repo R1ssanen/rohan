@@ -212,10 +212,7 @@ static inline rvecf rvm_permute_f32(rvecf a, rveci mask)
 
 #define rvm_shuffle_f32(a, b, mask) _mm256_shuffle_ps(a, b, mask)
 
-static inline rvecf rvm_increment_f32(rvecf a)
-{
-    return _mm256_add_ps(a, _mm256_set1_ps(1.f));
-}
+#define rvm_increment_f32(a) a = _mm256_add_ps(a, _mm256_set1_ps(1.f))
 
 #endif
 #endif

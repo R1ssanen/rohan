@@ -1,7 +1,5 @@
 bin
 .vscode
-test_shader
-cat.png
 *.dll
 main.c
-stb_image.h
+test_shader

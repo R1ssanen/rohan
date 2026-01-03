@@ -277,13 +277,13 @@ static inline void rvm_maskstore_i32(int *to, rveci mask, rveci a)
 // 32-byte aligned
 static inline void rvm_store_int(void *to, rveci a)
 {
-    _mm256_store_epi32(to, a);
+    _mm256_store_si256((rveci *)to, a);
 }
 
 // non-aligned
 static inline void rvm_storeu_int(void *to, rveci a)
 {
-    _mm256_storeu_epi32(to, a);
+    _mm256_storeu_si256((__m256i_u *)to, a);
 }
 
 // 32-byte aligned

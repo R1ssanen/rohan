@@ -5,45 +5,42 @@
 
 #include "simd/rvm.h"
 
-typedef enum rohan_render_mode
+#if defined _WIN32 || defined __CYGWIN__
+#ifdef ROHAN_BUILD
+#define ROHAN_API __declspec(dllexport)
+#else
+#define ROHAN_API __declspec(dllimport)
+#endif
+#elif defined __GNUC__ || defined __clang__
+#define ROHAN_API __attribute__((visibility("default")))
+#else
+#define ROHAN_API
+#endif
+
+struct rohan_shader_object;
+
+enum
 {
-    ROHAN_LINES,
-    ROHAN_TRIANGLES
-} rohan_render_mode;
+    ROHAN_LINE,
+    ROHAN_LINE_STRIP,
+    ROHAN_LINE_LOOP,
+    ROHAN_TRIANGLE,
+    ROHAN_TRIANGLE_FAN,
+    ROHAN_QUAD,
+};
 
 typedef struct rohan_raster_state rohan_raster_state;
 struct rohan_raster_state
 {
-    struct
-    {
-        rvecf x, y, z;
-    } weight;
-    struct
-    {
-        rvecf x, y;
-    } pos;
+    rvecf frag_x, frag_y;
     rveci mask;
-    size_t index; // cluster begin
-};
-
-typedef rohan_raster_state *restrict rohan_raster_state_rp;
-typedef void *restrict rohan_value_rp;
-
-typedef void (*rohan_shader_program_fn)(rohan_value_rp, const rohan_raster_state_rp);
-typedef void (*rohan_shader_uniform_fn)(rohan_value_rp, int, const rohan_value_rp, size_t);
-typedef void *(*rohan_shader_instance_fn)(void);
-
-typedef struct rohan_shader_object rohan_shader_object;
-struct rohan_shader_object
-{
-    rohan_shader_program_fn shader;
-    void *instance;
-    int max_w;
+    size_t offset; // cluster begin
+    size_t primitive_id;
 };
 
 void rohan_initialize(void);
 
-void rohan_render(rohan_shader_object *shader, const float *vertices, const int *indices, size_t index_count,
-                  rohan_render_mode mode);
+void rohan_render(struct rohan_shader_object *restrict shader, int width, const float *restrict vertices,
+                  const int *restrict indices, size_t index_count, int mode);
 
 #endif
