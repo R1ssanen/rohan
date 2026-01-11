@@ -34,8 +34,8 @@ extern "C"
 
     ROHAN_API void rohan_initialize(void);
 
-    ROHAN_API void rohan_render_triangle_raw(rohan_shader_object *shader, int width, float x0, float y0, float x1,
-                                             float y1, float x2, float y2, const float *ROHAN_RESTRICT attr_0,
+    ROHAN_API void rohan_render_triangle_raw(struct rohan_shader_object *shader, int width, float x0, float y0,
+                                             float x1, float y1, float x2, float y2, const float *ROHAN_RESTRICT attr_0,
                                              const float *ROHAN_RESTRICT attr_1, const float *ROHAN_RESTRICT attr_2);
 
     ROHAN_API void rohan_render(struct rohan_shader_object *ROHAN_RESTRICT shader, int width,
