@@ -1,9 +1,9 @@
 ﻿cmake_minimum_required(VERSION 3.10)
 project(rohan LANGUAGES C DESCRIPTION "AVX2 rasterizer")
 
-add_library(rohan SHARED "src/render.c")
+add_library(rohan SHARED "rohan.c" "rohan.h")
 
-target_include_directories(rohan PUBLIC "src")
+target_include_directories(rohan PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_compile_definitions(rohan PRIVATE ROHAN_BUILD)
 

@@ -2,4 +2,4 @@ bin
 .vscode
 *.dll
 main.c
-test_shader
+testing
