@@ -22,10 +22,8 @@ extern "C"
 {
 #define rohan_restrict
 #else
+#include <stdbool.h>
 #define rohan_restrict restrict
-#define bool _Bool
-#define true 1
-#define false 0
 #endif
 
 #ifndef ROHAN_MAX_ATTRIBUTES
@@ -68,7 +66,7 @@ extern "C"
 
     ROHAN_API void rohan_init(void);
 
-    ROHAN_API bool rohan_render(rohan_shader_object *rohan_restrict shader, int width,
+    ROHAN_API void rohan_render(rohan_shader_object *rohan_restrict shader, int width,
                                 const float *rohan_restrict vertices, const int *rohan_restrict indices,
                                 size_t index_count, rohan_render_mode mode);
 

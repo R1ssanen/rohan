@@ -36,14 +36,14 @@ void rohan_init(void)
     prefix_masks[6] = _mm256_setr_epi32(0, 0, 0, 0, 0, 0, -1, -1);
     prefix_masks[7] = _mm256_setr_epi32(0, 0, 0, 0, 0, 0, 0, -1);
 
-    postfix_masks[0] = _mm256_set1_epi32(-1);
-    postfix_masks[1] = _mm256_setr_epi32(-1, -1, -1, -1, -1, -1, -1, 0);
-    postfix_masks[2] = _mm256_setr_epi32(-1, -1, -1, -1, -1, -1, 0, 0);
-    postfix_masks[3] = _mm256_setr_epi32(-1, -1, -1, -1, -1, 0, 0, 0);
-    postfix_masks[4] = _mm256_setr_epi32(-1, -1, -1, -1, 0, 0, 0, 0);
-    postfix_masks[5] = _mm256_setr_epi32(-1, -1, -1, 0, 0, 0, 0, 0);
-    postfix_masks[6] = _mm256_setr_epi32(-1, -1, 0, 0, 0, 0, 0, 0);
-    postfix_masks[7] = _mm256_setr_epi32(-1, 0, 0, 0, 0, 0, 0, 0);
+    postfix_masks[0] = _mm256_setr_epi32(-1, 0, 0, 0, 0, 0, 0, 0);
+    postfix_masks[1] = _mm256_setr_epi32(-1, -1, 0, 0, 0, 0, 0, 0);
+    postfix_masks[2] = _mm256_setr_epi32(-1, -1, -1, 0, 0, 0, 0, 0);
+    postfix_masks[3] = _mm256_setr_epi32(-1, -1, -1, -1, 0, 0, 0, 0);
+    postfix_masks[4] = _mm256_setr_epi32(-1, -1, -1, -1, -1, 0, 0, 0);
+    postfix_masks[5] = _mm256_setr_epi32(-1, -1, -1, -1, -1, -1, 0, 0);
+    postfix_masks[6] = _mm256_setr_epi32(-1, -1, -1, -1, -1, -1, -1, 0);
+    postfix_masks[7] = _mm256_set1_epi32(-1);
 
     infix_masks[0][0] = _mm256_setr_epi32(-1, 0, 0, 0, 0, 0, 0, 0);
     infix_masks[0][1] = _mm256_setr_epi32(-1, -1, 0, 0, 0, 0, 0, 0);
@@ -107,14 +107,10 @@ static inline void advance(rohan_raster_state *restrict state, rohan_shader_obje
 
 static void rasterize(rohan_shader_object *shader, int width, const float *restrict attr_0,
                       const __m256 *restrict dattr_dx, const __m256 *restrict dattr_dy, float x_left, float dx_dy_left,
-                      float x_right, float dx_dy_right, float y_top, float y_bottom)
+                      float x_right, float dx_dy_right, int y_top, int y_bottom)
 {
     rohan_raster_state state;
-    state.frag_y = _mm256_set1_ps(y_top);
-    size_t row = (int)y_top * width;
-
     __m256 seq = _mm256_setr_ps(0, 1, 2, 3, 4, 5, 6, 7);
-    __m256 lines = _mm256_set1_ps(0.f);
 
     __m256 dattr_dx_step[ROHAN_MAX_ATTRIBUTES];
     __m256 attr_00[ROHAN_MAX_ATTRIBUTES];
@@ -124,18 +120,23 @@ static void rasterize(rohan_shader_object *shader, int width, const float *restr
         attr_00[i] = _mm256_set1_ps(attr_0[i]);
     }
 
-    for (int i = 0; i < (int)y_bottom - (int)y_top; ++i, row += width,
-             state.frag_y = _mm256_add_ps(state.frag_y, _mm256_set1_ps(1.f)),
-             lines = _mm256_add_ps(lines, _mm256_set1_ps(1.f)))
+    size_t row = y_top * width;
+    for (int y = y_top; y < y_bottom; ++y, row += width)
     {
-        int x0 = floorf(x_left);
+        int x0 = ceilf(x_left);
         int x1 = floorf(x_right);
+        if (x0 > x1)
+        {
+            goto interpolate;
+        }
+
         int x0_aligned = x0 & ~7;
         int x1_aligned = x1 & ~7;
         int header = x0 - x0_aligned;
 
         state.offset = row + x0_aligned;
         state.frag_x = _mm256_add_ps(seq, _mm256_set1_ps(x0_aligned));
+        state.frag_y = _mm256_set1_ps(y);
 
         __m256 multiplier_mask = multiplier_masks[header];
         for (int j = 0; j < shader->attribute_count; ++j)
@@ -160,10 +161,11 @@ static void rasterize(rohan_shader_object *shader, int width, const float *restr
                 advance(&state, shader, dattr_dx_step);
             }
 
-            state.mask = postfix_masks[(x1_aligned + 7) - x1];
+            state.mask = postfix_masks[x1 - x1_aligned];
             shader->main(shader->instance, &state);
         }
 
+    interpolate:
         x_left += dx_dy_left;
         x_right += dx_dy_right;
 
@@ -178,6 +180,10 @@ static void render_triangle(rohan_shader_object *shader, int width, float x0, fl
                             float y2, const float *restrict attr_0, const float *restrict attr_1,
                             const float *restrict attr_2)
 {
+    y0 = floorf(y0);
+    y1 = floorf(y1);
+    y2 = floorf(y2);
+
     if (y0 > y1)
     {
         swap_f(x0, x1);
@@ -315,7 +321,7 @@ static void render_line(rohan_shader_object *shader, int width, float x0, float 
     return;
 }
 
-bool rohan_render(rohan_shader_object *restrict shader, int width, const float *restrict vertices,
+void rohan_render(rohan_shader_object *restrict shader, int width, const float *restrict vertices,
                   const int *restrict indices, size_t index_count, rohan_render_mode mode)
 {
     int attribs = 2 + shader->attribute_count;
@@ -386,8 +392,6 @@ bool rohan_render(rohan_shader_object *restrict shader, int width, const float *
         break;
 
     default:
-        return false;
+        break;
     }
-
-    return true;
 }
