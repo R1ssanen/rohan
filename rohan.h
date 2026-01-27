@@ -32,34 +32,34 @@ extern "C"
 
 #include <immintrin.h>
 #include <stddef.h>
+#include <stdint.h>
 
     typedef struct rohan_raster_state rohan_raster_state;
     struct rohan_raster_state
     {
         struct
         {
-            __m256 x;
-            __m256 y;
+            __m256 x, y;
         } pos;
 
         __m256i mask;
         size_t byte_offset; // cluster begin
-        int primitive_id;
+        uint32_t primitive_id;
     };
 
-    typedef struct rohan_shader_object rohan_shader_object;
-    struct rohan_shader_object
+    typedef struct rohan_shader_spec rohan_shader_spec;
+    struct rohan_shader_spec
     {
-        void *instance;
+        const char *name;
         void (*main)(void *rohan_restrict instance, const rohan_raster_state *rohan_restrict state);
-        void (*set_uniform)(void *rohan_restrict instance, int index, const void *rohan_restrict value,
-                            size_t value_size);
-        void (*destroy)(rohan_shader_object *rohan_restrict self);
-        __m256 *attributes;
-        int attribute_count;
-        int target_pitch;
-        int target_stride;
+        void (*destroy)(rohan_shader_spec *rohan_restrict self);
+        size_t attribute_offset;
+        size_t attribute_count;
+        size_t instance_size;
+        size_t uniform_offsets[];
     };
+
+    typedef rohan_shader_spec *(*rohan_get_specification_fn)(void);
 
     enum rohan_render_mode
     {
@@ -68,13 +68,15 @@ extern "C"
         ROHAN_LINE_LOOP,
         ROHAN_TRIANGLE,
         ROHAN_TRIANGLE_FAN,
-        ROHAN_QUAD,
+        ROHAN_QUAD
     };
 
     ROHAN_API void rohan_init(void);
 
-    ROHAN_API void rohan_render(rohan_shader_object *rohan_restrict shader, const float *rohan_restrict vertices,
-                                const int *rohan_restrict indices, size_t index_count, enum rohan_render_mode mode);
+    ROHAN_API void rohan_render(const rohan_shader_spec *rohan_restrict spec, void *rohan_restrict instance,
+                                size_t target_pitch, size_t target_stride, const float *rohan_restrict vertices,
+                                const uint32_t *rohan_restrict indices, size_t index_count,
+                                enum rohan_render_mode mode);
 
 #ifdef __cplusplus
 }

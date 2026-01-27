@@ -92,36 +92,40 @@ void rohan_init(void)
     multiplier_masks[7] = _mm256_setr_ps(-7.f, -6.f, -5.f, -4.f, -3.f, -2.f, -1.f, 0.f);
 }
 
-static inline void advance(rohan_raster_state *restrict state, rohan_shader_object *restrict shader,
-                           const __m256 *dattr_dx)
+static inline void advance(rohan_raster_state *restrict state, const rohan_shader_spec *restrict spec,
+                           size_t target_stride, void *restrict instance, __m256 *restrict attributes,
+                           const __m256 *restrict dattr_dx)
 {
-    shader->main(shader->instance, state);
+    spec->main(instance, state);
     state->pos.x = _mm256_add_ps(state->pos.x, _mm256_set1_ps(8));
-    state->byte_offset += 8 * shader->target_stride;
+    state->byte_offset += 8 * target_stride;
 
-    for (int i = 0; i < shader->attribute_count; ++i)
+    for (size_t i = 0; i < spec->attribute_count; ++i)
     {
-        shader->attributes[i] = _mm256_add_ps(shader->attributes[i], dattr_dx[i]);
+        attributes[i] = _mm256_add_ps(attributes[i], dattr_dx[i]);
     }
 }
 
-static void rasterize(rohan_shader_object *shader, int primitive_index, const float *restrict attr_0,
+static void rasterize(const rohan_shader_spec *restrict spec, void *restrict instance, size_t target_pitch,
+                      size_t target_stride, uint32_t primitive_id, const float *restrict attr_0,
                       const __m256 *restrict dattr_dx, const __m256 *restrict dattr_dy, float x_left, float dx_dy_left,
                       float x_right, float dx_dy_right, int y_top, int y_bottom)
 {
-    rohan_raster_state state = {.primitive_id = primitive_index};
+    rohan_raster_state state = {.primitive_id = primitive_id};
     __m256 seq = _mm256_setr_ps(0, 1, 2, 3, 4, 5, 6, 7);
+
+    __m256 *attributes = (__m256 *)(((char *)instance) + spec->attribute_offset);
 
     __m256 dattr_dx_step[ROHAN_MAX_ATTRIBUTES];
     __m256 attr_00[ROHAN_MAX_ATTRIBUTES];
-    for (int i = 0; i < shader->attribute_count; ++i)
+    for (size_t i = 0; i < spec->attribute_count; ++i)
     {
         dattr_dx_step[i] = _mm256_mul_ps(dattr_dx[i], _mm256_set1_ps(8));
         attr_00[i] = _mm256_set1_ps(attr_0[i]);
     }
 
-    size_t byte_offset = y_top * shader->target_pitch;
-    for (int y = y_top; y < y_bottom; ++y, byte_offset += shader->target_pitch)
+    size_t byte_offset = y_top * target_pitch;
+    for (int y = y_top; y < y_bottom; ++y, byte_offset += target_pitch)
     {
         int x0 = ceilf(x_left);
         int x1 = floorf(x_right);
@@ -134,49 +138,50 @@ static void rasterize(rohan_shader_object *shader, int primitive_index, const fl
         int x1_aligned = x1 & ~7;
         int header = x0 - x0_aligned;
 
-        state.byte_offset = byte_offset + x0_aligned * shader->target_stride;
+        state.byte_offset = byte_offset + x0_aligned * target_stride;
         state.pos.x = _mm256_add_ps(seq, _mm256_set1_ps(x0_aligned));
         state.pos.y = _mm256_set1_ps(y);
 
         __m256 multiplier_mask = multiplier_masks[header];
-        for (int j = 0; j < shader->attribute_count; ++j)
+        for (size_t i = 0; i < spec->attribute_count; ++i)
         {
-            shader->attributes[j] = _mm256_fmadd_ps(multiplier_mask, dattr_dx[j], attr_00[j]);
+            attributes[i] = _mm256_fmadd_ps(multiplier_mask, dattr_dx[i], attr_00[i]);
         }
 
         if (x0_aligned == x1_aligned)
         {
             state.mask = infix_masks[header][x1 - x0_aligned];
-            shader->main(shader->instance, &state);
+            spec->main(instance, &state);
         }
         else
         {
             state.mask = prefix_masks[header];
-            advance(&state, shader, dattr_dx_step);
+            advance(&state, spec, target_stride, instance, attributes, dattr_dx_step);
             state.mask = _mm256_set1_epi32(-1);
 
             int steps = (x1_aligned - x0_aligned) >> 3;
-            for (int j = 1; j < steps; ++j)
+            for (int i = 1; i < steps; ++i)
             {
-                advance(&state, shader, dattr_dx_step);
+                advance(&state, spec, target_stride, instance, attributes, dattr_dx_step);
             }
 
             state.mask = postfix_masks[x1 - x1_aligned];
-            shader->main(shader->instance, &state);
+            spec->main(instance, &state);
         }
 
     interpolate:
         x_left += dx_dy_left;
         x_right += dx_dy_right;
 
-        for (int j = 0; j < shader->attribute_count; ++j)
+        for (size_t i = 0; i < spec->attribute_count; ++i)
         {
-            attr_00[j] = _mm256_add_ps(attr_00[j], dattr_dy[j]);
+            attr_00[i] = _mm256_add_ps(attr_00[i], dattr_dy[i]);
         }
     }
 }
 
-static void render_triangle(rohan_shader_object *shader, int primitive_index, float x0, float y0, float x1, float y1,
+static void render_triangle(const rohan_shader_spec *restrict spec, void *restrict instance, size_t target_pitch,
+                            size_t target_stride, uint32_t primitive_id, float x0, float y0, float x1, float y1,
                             float x2, float y2, const float *restrict attr_0, const float *restrict attr_1,
                             const float *restrict attr_2)
 {
@@ -215,24 +220,26 @@ static void render_triangle(rohan_shader_object *shader, int primitive_index, fl
 
         if (x0 < x1)
         {
-            for (int i = 0; i < shader->attribute_count; ++i)
+            for (size_t i = 0; i < spec->attribute_count; ++i)
             {
                 dattr_dx[i] = _mm256_set1_ps((attr_1[i] - attr_0[i]) * inv_dx_ab);
                 dattr_dy[i] = _mm256_set1_ps((attr_2[i] - attr_0[i]) * inv_dy_ac);
             }
 
-            rasterize(shader, primitive_index, attr_0, dattr_dx, dattr_dy, x0, dxdy_left, x1, dxdy_right, y0, y2);
+            rasterize(spec, instance, target_pitch, target_stride, primitive_id, attr_0, dattr_dx, dattr_dy, x0,
+                      dxdy_left, x1, dxdy_right, y0, y2);
         }
         else
         {
             float inv_dy_bc = 1.f / (y2 - y1);
-            for (int i = 0; i < shader->attribute_count; ++i)
+            for (size_t i = 0; i < spec->attribute_count; ++i)
             {
                 dattr_dx[i] = _mm256_set1_ps((attr_0[i] - attr_1[i]) * (-inv_dx_ab));
                 dattr_dy[i] = _mm256_set1_ps((attr_2[i] - attr_1[i]) * inv_dy_bc);
             }
 
-            rasterize(shader, primitive_index, attr_1, dattr_dx, dattr_dy, x1, dxdy_right, x0, dxdy_left, y0, y2);
+            rasterize(spec, instance, target_pitch, target_stride, primitive_id, attr_1, dattr_dx, dattr_dy, x1,
+                      dxdy_right, x0, dxdy_left, y0, y2);
         }
     }
 
@@ -245,23 +252,25 @@ static void render_triangle(rohan_shader_object *shader, int primitive_index, fl
         if (x1 < x2)
         {
             float inv_dy_ab = 1.f / (y1 - y0);
-            for (int i = 0; i < shader->attribute_count; ++i)
+            for (size_t i = 0; i < spec->attribute_count; ++i)
             {
                 dattr_dx[i] = _mm256_set1_ps((attr_2[i] - attr_1[i]) * inv_dx_bc);
                 dattr_dy[i] = _mm256_set1_ps((attr_1[i] - attr_0[i]) * inv_dy_ab);
             }
 
-            rasterize(shader, primitive_index, attr_0, dattr_dx, dattr_dy, x0, dxdy_left, x0, dxdy_right, y0, y2);
+            rasterize(spec, instance, target_pitch, target_stride, primitive_id, attr_0, dattr_dx, dattr_dy, x0,
+                      dxdy_left, x0, dxdy_right, y0, y2);
         }
         else
         {
-            for (int i = 0; i < shader->attribute_count; ++i)
+            for (size_t i = 0; i < spec->attribute_count; ++i)
             {
                 dattr_dx[i] = _mm256_set1_ps((attr_1[i] - attr_2[i]) * (-inv_dx_bc));
                 dattr_dy[i] = _mm256_set1_ps((attr_2[i] - attr_0[i]) * inv_dy_ac);
             }
 
-            rasterize(shader, primitive_index, attr_0, dattr_dx, dattr_dy, x0, dxdy_right, x0, dxdy_left, y0, y2);
+            rasterize(spec, instance, target_pitch, target_stride, primitive_id, attr_0, dattr_dx, dattr_dy, x0,
+                      dxdy_right, x0, dxdy_left, y0, y2);
         }
     }
 
@@ -279,118 +288,132 @@ static void render_triangle(rohan_shader_object *shader, int primitive_index, fl
         float inv_dy_bc = 1.f / (y2 - y1);
 
         float attr_3[ROHAN_MAX_ATTRIBUTES];
-        for (int i = 0; i < shader->attribute_count; ++i)
+        for (size_t i = 0; i < spec->attribute_count; ++i)
         {
             attr_3[i] = fmaf((attr_2[i] - attr_0[i]) * inv_dy_ac, dy_ab, attr_0[i]);
         }
 
         if (x1 < x3)
         {
-            for (int i = 0; i < shader->attribute_count; ++i)
+            for (size_t i = 0; i < spec->attribute_count; ++i)
             {
                 dattr_dx[i] = _mm256_set1_ps((attr_3[i] - attr_1[i]) * inv_dx_bd);
                 dattr_dy[i] = _mm256_set1_ps((attr_1[i] - attr_0[i]) * inv_dy_ab);
             }
 
-            rasterize(shader, primitive_index, attr_0, dattr_dx, dattr_dy, x0, dxdy_top, x0, dxdy_ac, y0, y1);
+            rasterize(spec, instance, target_pitch, target_stride, primitive_id, attr_0, dattr_dx, dattr_dy, x0,
+                      dxdy_top, x0, dxdy_ac, y0, y1);
 
-            for (int i = 0; i < shader->attribute_count; ++i)
+            for (size_t i = 0; i < spec->attribute_count; ++i)
             {
                 dattr_dy[i] = _mm256_set1_ps((attr_2[i] - attr_1[i]) * inv_dy_bc);
             }
 
-            rasterize(shader, primitive_index, attr_1, dattr_dx, dattr_dy, x1, dxdy_bottom, x3, dxdy_ac, y1, y2);
+            rasterize(spec, instance, target_pitch, target_stride, primitive_id, attr_1, dattr_dx, dattr_dy, x1,
+                      dxdy_bottom, x3, dxdy_ac, y1, y2);
         }
         else
         {
-            for (int i = 0; i < shader->attribute_count; ++i)
+            for (size_t i = 0; i < spec->attribute_count; ++i)
             {
                 dattr_dx[i] = _mm256_set1_ps((attr_1[i] - attr_3[i]) * (-inv_dx_bd));
                 dattr_dy[i] = _mm256_set1_ps((attr_3[i] - attr_0[i]) * inv_dy_ab);
             }
 
-            rasterize(shader, primitive_index, attr_0, dattr_dx, dattr_dy, x0, dxdy_ac, x0, dxdy_top, y0, y1);
-            rasterize(shader, primitive_index, attr_3, dattr_dx, dattr_dy, x3, dxdy_ac, x1, dxdy_bottom, y1, y2);
+            rasterize(spec, instance, target_pitch, target_stride, primitive_id, attr_0, dattr_dx, dattr_dy, x0,
+                      dxdy_ac, x0, dxdy_top, y0, y1);
+            rasterize(spec, instance, target_pitch, target_stride, primitive_id, attr_3, dattr_dx, dattr_dy, x3,
+                      dxdy_ac, x1, dxdy_bottom, y1, y2);
         }
     }
 }
 
-static void render_line(rohan_shader_object *shader, int primitive_index, float x0, float y0, float x1, float y1,
+static void render_line(const rohan_shader_spec *restrict spec, void *restrict instance, size_t target_pitch,
+                        size_t target_stride, int primitive_index, float x0, float y0, float x1, float y1,
                         const float *restrict attr_0, const float *restrict attr_1)
 {
     return;
 }
 
-void rohan_render(rohan_shader_object *restrict shader, const float *restrict vertices, const int *restrict indices,
+void rohan_render(const rohan_shader_spec *restrict spec, void *restrict instance, size_t target_pitch,
+                  size_t target_stride, const float *restrict vertices, const uint32_t *restrict indices,
                   size_t index_count, enum rohan_render_mode mode)
 {
-    int attribs = 2 + shader->attribute_count;
-    int primitive_index = 1;
+    int attribs = 2 + spec->attribute_count;
+    uint32_t primitive_id = 1;
     const float *v0, *v1, *v2, *v3;
 
     switch (mode)
     {
     case ROHAN_LINE:
-        for (size_t i = 0; i < index_count; i += 2, ++primitive_index)
+        for (size_t i = 0; i < index_count; i += 2, ++primitive_id)
         {
             v0 = vertices + indices[i] * attribs;
             v1 = vertices + indices[i + 1] * attribs;
-            render_line(shader, primitive_index, v0[0], v0[1], v1[0], v1[1], v0 + 2, v1 + 2);
+            render_line(spec, instance, target_pitch, target_stride, primitive_id, v0[0], v0[1], v1[0], v1[1], v0 + 2,
+                        v1 + 2);
         }
         break;
 
     case ROHAN_LINE_STRIP:
-        for (size_t i = 0; i < index_count - 1; i += 1, ++primitive_index)
+        for (size_t i = 0; i < index_count - 1; i += 1, ++primitive_id)
         {
             v0 = vertices + indices[i] * attribs;
             v1 = vertices + indices[i + 1] * attribs;
-            render_line(shader, primitive_index, v0[0], v0[1], v1[0], v1[1], v0 + 2, v1 + 2);
+            render_line(spec, instance, target_pitch, target_stride, primitive_id, v0[0], v0[1], v1[0], v1[1], v0 + 2,
+                        v1 + 2);
         }
         break;
 
     case ROHAN_LINE_LOOP:
-        for (size_t i = 0; i < index_count - 1; i += 1, ++primitive_index)
+        for (size_t i = 0; i < index_count - 1; i += 1, ++primitive_id)
         {
             v0 = vertices + indices[i] * attribs;
             v1 = vertices + indices[i + 1] * attribs;
-            render_line(shader, primitive_index, v0[0], v0[1], v1[0], v1[1], v0 + 2, v1 + 2);
+            render_line(spec, instance, target_pitch, target_stride, primitive_id, v0[0], v0[1], v1[0], v1[1], v0 + 2,
+                        v1 + 2);
         }
 
-        ++primitive_index;
+        primitive_id += 1;
         v0 = vertices + indices[index_count - 1] * attribs;
         v1 = vertices + indices[0] * attribs;
-        render_line(shader, primitive_index, v0[0], v0[1], v1[0], v1[1], v0 + 2, v1 + 2);
+        render_line(spec, instance, target_pitch, target_stride, primitive_id, v0[0], v0[1], v1[0], v1[1], v0 + 2,
+                    v1 + 2);
         break;
 
     case ROHAN_TRIANGLE:
-        for (size_t i = 0; i < index_count; i += 3, ++primitive_index)
+        for (size_t i = 0; i < index_count; i += 3, ++primitive_id)
         {
             v0 = vertices + indices[i] * attribs;
             v1 = vertices + indices[i + 1] * attribs;
             v2 = vertices + indices[i + 2] * attribs;
-            render_triangle(shader, primitive_index, v0[0], v0[1], v1[0], v1[1], v2[0], v2[1], v0 + 2, v1 + 2, v2 + 2);
+            render_triangle(spec, instance, target_pitch, target_stride, primitive_id, v0[0], v0[1], v1[0], v1[1],
+                            v2[0], v2[1], v0 + 2, v1 + 2, v2 + 2);
         }
         break;
 
     case ROHAN_TRIANGLE_FAN:
         v0 = vertices + indices[0] * attribs;
-        for (size_t i = 1; i < index_count - 1; i += 1, ++primitive_index)
+        for (size_t i = 1; i < index_count - 1; i += 1, ++primitive_id)
         {
             v1 = vertices + indices[i] * attribs;
             v2 = vertices + indices[i + 1] * attribs;
-            render_triangle(shader, primitive_index, v0[0], v0[1], v1[0], v1[1], v2[0], v2[1], v0 + 2, v1 + 2, v2 + 2);
+            render_triangle(spec, instance, target_pitch, target_stride, primitive_id, v0[0], v0[1], v1[0], v1[1],
+                            v2[0], v2[1], v0 + 2, v1 + 2, v2 + 2);
         }
         break;
 
     case ROHAN_QUAD:
-        for (size_t i = 0; i < index_count; i += 4, ++primitive_index)
+        for (size_t i = 0; i < index_count; i += 4, ++primitive_id)
         {
             v0 = vertices + indices[i] * attribs;
             v1 = vertices + indices[i + 1] * attribs;
             v2 = vertices + indices[i + 2] * attribs;
             v3 = vertices + indices[i + 3] * attribs;
-            render_triangle(shader, primitive_index, v0[0], v0[1], v1[0], v1[1], v2[0], v2[1], v0 + 2, v1 + 2, v2 + 2);
-            render_triangle(shader, primitive_index, v0[0], v0[1], v2[0], v2[1], v3[0], v3[1], v0 + 2, v2 + 2, v3 + 2);
+            render_triangle(spec, instance, target_pitch, target_stride, primitive_id, v0[0], v0[1], v1[0], v1[1],
+                            v2[0], v2[1], v0 + 2, v1 + 2, v2 + 2);
+            render_triangle(spec, instance, target_pitch, target_stride, primitive_id, v0[0], v0[1], v2[0], v2[1],
+                            v3[0], v3[1], v0 + 2, v2 + 2, v3 + 2);
         }
         break;
 
