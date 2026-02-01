@@ -15,7 +15,7 @@ set_target_properties(rohan PROPERTIES
 
 target_compile_options(rohan PUBLIC
     -Wall -Wextra -Wpedantic -march=native -mavx2 -mfma
-    $<$<CONFIG:Debug>: -g -O0>
+    $<$<CONFIG:Debug>: -g -O0 -fno-inline -fno-omit-frame-pointer>
     $<$<CONFIG:Release>: -O3>
 )
 
