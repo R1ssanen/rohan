@@ -26,10 +26,6 @@ extern "C"
 #define rohan_restrict restrict
 #endif
 
-#ifndef ROHAN_MAX_ATTRIBUTES
-#define ROHAN_MAX_ATTRIBUTES 2
-#endif
-
 #include <immintrin.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -39,7 +35,7 @@ extern "C"
     {
         struct
         {
-            __m256 x, y;
+            __m256i x, y;
         } pos;
 
         __m256i mask;
@@ -52,6 +48,7 @@ extern "C"
         const char *name;
         void (*main)(void *rohan_restrict instance, const rohan_raster_state *rohan_restrict state);
         void (*destroy)(rohan_shader_desc *rohan_restrict self);
+        __m256 *_attr_dx, *_attr_dy, *_attr_0, *_attr_01;
         size_t attribute_offset;
         size_t attribute_count;
         size_t instance_size;
@@ -62,10 +59,9 @@ extern "C"
 
     ROHAN_API void rohan_init(void);
 
-    ROHAN_API void rohan_rasterize(const rohan_shader_desc *rohan_restrict desc, void *rohan_restrict instance,
-                                   size_t target_pitch, size_t target_stride, float x0, float y0, float x1, float y1,
-                                   float x2, float y2, const float *rohan_restrict attr_0,
-                                   const float *rohan_restrict attr_1, const float *rohan_restrict attr_2);
+    ROHAN_API void rohan_rasterize(rohan_shader_desc *rohan_restrict desc, void *rohan_restrict instance,
+                                   size_t target_pitch, size_t target_stride, const float *rohan_restrict vertex0,
+                                   const float *rohan_restrict vertex1, const float *rohan_restrict vertex2);
 
 #ifdef __cplusplus
 }

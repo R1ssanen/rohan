@@ -20,6 +20,18 @@
         b = temp;                                                                                                      \
     } while (0)
 
+static inline __m256 load_m256(const uint8_t *src)
+{
+    __m256 v;
+    memcpy(&v, src, sizeof(__m256));
+    return v;
+}
+
+static inline void store_m256(uint8_t *dest, __m256 v)
+{
+    memcpy(dest, &v, sizeof(__m256));
+}
+
 static __m256i prefix_masks[8];
 static __m256i postfix_masks[8];
 static __m256i infix_masks[8][8];
@@ -82,52 +94,60 @@ void rohan_init(void)
     infix_masks[6][7] = _mm256_setr_epi32(0, 0, 0, 0, 0, 0, -1, -1);
     infix_masks[7][7] = _mm256_setr_epi32(0, 0, 0, 0, 0, 0, 0, -1);
 
-    multiplier_masks[0] = _mm256_setr_ps(0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f);
-    multiplier_masks[1] = _mm256_setr_ps(-1.f, 0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f);
-    multiplier_masks[2] = _mm256_setr_ps(-2.f, -1.f, 0.f, 1.f, 2.f, 3.f, 4.f, 5.f);
-    multiplier_masks[3] = _mm256_setr_ps(-3.f, -2.f, -1.f, 0.f, 1.f, 2.f, 3.f, 4.f);
-    multiplier_masks[4] = _mm256_setr_ps(-4.f, -3.f, -2.f, -1.f, 0.f, 1.f, 2.f, 3.f);
-    multiplier_masks[5] = _mm256_setr_ps(-5.f, -4.f, -3.f, -2.f, -1.f, 0.f, 1.f, 2.f);
-    multiplier_masks[6] = _mm256_setr_ps(-6.f, -5.f, -4.f, -3.f, -2.f, -1.f, 0.f, 1.f);
-    multiplier_masks[7] = _mm256_setr_ps(-7.f, -6.f, -5.f, -4.f, -3.f, -2.f, -1.f, 0.f);
+    multiplier_masks[0] =
+        _mm256_setr_ps(0.f, 1.f / 8.f, 2.f / 8.f, 3.f / 8.f, 4.f / 8.f, 5.f / 8.f, 6.f / 8.f, 7.f / 8.f);
+    multiplier_masks[1] =
+        _mm256_setr_ps(-1.f / 8.f, 0.f, 1.f / 8.f, 2.f / 8.f, 3.f / 8.f, 4.f / 8.f, 5.f / 8.f, 6.f / 8.f);
+    multiplier_masks[2] =
+        _mm256_setr_ps(-2.f / 8.f, -1.f / 8.f, 0.f, 1.f / 8.f, 2.f / 8.f, 3.f / 8.f, 4.f / 8.f, 5.f / 8.f);
+    multiplier_masks[3] =
+        _mm256_setr_ps(-3.f / 8.f, -2.f / 8.f, -1.f / 8.f, 0.f, 1.f / 8.f, 2.f / 8.f, 3.f / 8.f, 4.f / 8.f);
+    multiplier_masks[4] =
+        _mm256_setr_ps(-4.f / 8.f, -3.f / 8.f, -2.f / 8.f, -1.f / 8.f, 0.f, 1.f / 8.f, 2.f / 8.f, 3.f / 8.f);
+    multiplier_masks[5] =
+        _mm256_setr_ps(-5.f / 8.f, -4.f / 8.f, -3.f / 8.f, -2.f / 8.f, -1.f / 8.f, 0.f, 1.f / 8.f, 2.f / 8.f);
+    multiplier_masks[6] =
+        _mm256_setr_ps(-6.f / 8.f, -5.f / 8.f, -4.f / 8.f, -3.f / 8.f, -2.f / 8.f, -1.f / 8.f, 0.f, 1.f / 8.f);
+    multiplier_masks[7] =
+        _mm256_setr_ps(-7.f / 8.f, -6.f / 8.f, -5.f / 8.f, -4.f / 8.f, -3.f / 8.f, -2.f / 8.f, -1.f / 8.f, 0.f);
+
+    // multiplier_masks[0] = _mm256_setr_ps(0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f);
+    // multiplier_masks[1] = _mm256_setr_ps(-1.f, 0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f);
+    // multiplier_masks[2] = _mm256_setr_ps(-2.f, -1.f, 0.f, 1.f, 2.f, 3.f, 4.f, 5.f);
+    // multiplier_masks[3] = _mm256_setr_ps(-3.f, -2.f, -1.f, 0.f, 1.f, 2.f, 3.f, 4.f);
+    // multiplier_masks[4] = _mm256_setr_ps(-4.f, -3.f, -2.f, -1.f, 0.f, 1.f, 2.f, 3.f);
+    // multiplier_masks[5] = _mm256_setr_ps(-5.f, -4.f, -3.f, -2.f, -1.f, 0.f, 1.f, 2.f);
+    // multiplier_masks[6] = _mm256_setr_ps(-6.f, -5.f, -4.f, -3.f, -2.f, -1.f, 0.f, 1.f);
+    // multiplier_masks[7] = _mm256_setr_ps(-7.f, -6.f, -5.f, -4.f, -3.f, -2.f, -1.f, 0.f);
 }
 
-static inline void advance(rohan_raster_state *restrict state, const rohan_shader_desc *restrict desc,
-                           size_t target_stride, void *restrict instance, __m256 *restrict attributes,
-                           const __m256 *restrict dattr_dx)
+static inline void advance(rohan_raster_state *restrict state, rohan_shader_desc *restrict desc, size_t target_stride,
+                           void *restrict instance, uint8_t *restrict attributes)
 {
     desc->main(instance, state);
-    state->pos.x = _mm256_add_ps(state->pos.x, _mm256_set1_ps(8.f));
-    state->byte_offset += 8 * target_stride;
+    state->pos.x = _mm256_add_epi32(state->pos.x, _mm256_set1_epi32(8));
+    state->byte_offset += 8ull * target_stride;
 
     for (size_t i = 0; i < desc->attribute_count; ++i)
     {
-        attributes[i] = _mm256_add_ps(attributes[i], dattr_dx[i]);
+        uint8_t *field = attributes + i * sizeof(__m256);
+        __m256 attribute = load_m256(field);
+        store_m256(field, _mm256_add_ps(attribute, desc->_attr_dx[i]));
     }
 }
 
-static void rasterize(const rohan_shader_desc *restrict desc, void *restrict instance, size_t target_pitch,
-                      size_t target_stride, const float *restrict attr_0, const __m256 *restrict dattr_dx,
-                      const __m256 *restrict dattr_dy, float x_left, float dx_dy_left, float x_right, float dx_dy_right,
-                      int y_top, int y_bottom)
+static void rasterize(rohan_shader_desc *restrict desc, void *restrict instance, size_t target_pitch,
+                      size_t target_stride, float x_left, float dx_dy_left, float x_right, float dx_dy_right, int y_top,
+                      int y_bottom)
 {
-    rohan_raster_state state = {.pos = {.y = _mm256_set1_ps(y_top)}};
+    const __m256i seq = _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7);
+    const __m256i one = _mm256_set1_epi32(1);
 
-    __m256 *attributes = (__m256 *)((uint8_t *)instance + desc->attribute_offset);
-    __m256 seq = _mm256_setr_ps(0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f);
-    __m256 one = _mm256_set1_ps(1.f);
-
-    __m256 dattr_dx_step[ROHAN_MAX_ATTRIBUTES];
-    __m256 attr_00[ROHAN_MAX_ATTRIBUTES];
+    rohan_raster_state state = {.pos = {.y = _mm256_set1_epi32(y_top)}};
+    uint8_t *attributes = (uint8_t *)instance + desc->attribute_offset;
 
     size_t row_byte_offset = y_top * target_pitch;
-    for (size_t i = 0; i < desc->attribute_count; ++i)
-    {
-        dattr_dx_step[i] = _mm256_mul_ps(dattr_dx[i], _mm256_set1_ps(8.f));
-        attr_00[i] = _mm256_set1_ps(attr_0[i]);
-    }
-
-    for (int y = y_top; y < y_bottom; ++y, row_byte_offset += target_pitch)
+    for (int y = y_top; y < y_bottom; y += 1, row_byte_offset += target_pitch)
     {
         int x0 = ceilf(x_left);
         int x1 = floorf(x_right);
@@ -141,13 +161,14 @@ static void rasterize(const rohan_shader_desc *restrict desc, void *restrict ins
         int header = x0 - x0_aligned;
 
         state.byte_offset = row_byte_offset + x0_aligned * target_stride;
-        state.pos.x = _mm256_add_ps(seq, _mm256_set1_ps(x0_aligned));
-        state.pos.y = _mm256_add_ps(state.pos.y, one);
+        state.pos.x = _mm256_add_epi32(_mm256_set1_epi32(x0_aligned), seq);
+        state.pos.y = _mm256_add_epi32(state.pos.y, one);
 
         __m256 multiplier_mask = multiplier_masks[header];
         for (size_t i = 0; i < desc->attribute_count; ++i)
         {
-            attributes[i] = _mm256_fmadd_ps(multiplier_mask, dattr_dx[i], attr_00[i]);
+            __m256 attribute = _mm256_fmadd_ps(multiplier_mask, desc->_attr_dx[i], desc->_attr_0[i]);
+            store_m256(attributes + i * sizeof(__m256), attribute);
         }
 
         int aligned_diff = x1_aligned - x0_aligned;
@@ -159,13 +180,12 @@ static void rasterize(const rohan_shader_desc *restrict desc, void *restrict ins
         else
         {
             state.mask = prefix_masks[header];
-            advance(&state, desc, target_stride, instance, attributes, dattr_dx_step);
+            advance(&state, desc, target_stride, instance, attributes);
             state.mask = _mm256_set1_epi32(-1);
 
-            int steps = aligned_diff >> 3;
-            for (int i = 1; i < steps; ++i)
+            for (int i = 1; i < aligned_diff >> 3; ++i)
             {
-                advance(&state, desc, target_stride, instance, attributes, dattr_dx_step);
+                advance(&state, desc, target_stride, instance, attributes);
             }
 
             state.mask = postfix_masks[x1 - x1_aligned];
@@ -178,19 +198,18 @@ static void rasterize(const rohan_shader_desc *restrict desc, void *restrict ins
 
         for (size_t i = 0; i < desc->attribute_count; ++i)
         {
-            attr_00[i] = _mm256_add_ps(attr_00[i], dattr_dy[i]);
+            desc->_attr_0[i] = _mm256_add_ps(desc->_attr_0[i], desc->_attr_dy[i]);
         }
     }
 }
 
-void rohan_rasterize(const rohan_shader_desc *restrict desc, void *restrict instance, size_t target_pitch,
-                     size_t target_stride, float x0, float y0, float x1, float y1, float x2, float y2,
-                     const float *restrict attr_0, const float *restrict attr_1, const float *restrict attr_2)
+void rohan_rasterize(rohan_shader_desc *restrict desc, void *restrict instance, size_t target_pitch,
+                     size_t target_stride, const float *rohan_restrict vertex0, const float *rohan_restrict vertex1,
+                     const float *rohan_restrict vertex2)
 {
-
-    y0 = floorf(y0);
-    y1 = floorf(y1);
-    y2 = floorf(y2);
+    float x0 = vertex0[0], x1 = vertex1[0], x2 = vertex2[0];
+    float y0 = floorf(vertex0[1]), y1 = floorf(vertex1[1]), y2 = floorf(vertex2[1]);
+    const float *attr_0 = vertex0 + 2, *attr_1 = vertex1 + 2, *attr_2 = vertex2 + 2;
 
     if (y0 > y1)
     {
@@ -212,8 +231,6 @@ void rohan_rasterize(const rohan_shader_desc *restrict desc, void *restrict inst
     }
 
     float inv_dy_ac = 1.f / (y2 - y0);
-    __m256 dattr_dx[ROHAN_MAX_ATTRIBUTES];
-    __m256 dattr_dy[ROHAN_MAX_ATTRIBUTES];
 
     if ((int)y0 == (int)y1) // flat top
     {
@@ -225,24 +242,24 @@ void rohan_rasterize(const rohan_shader_desc *restrict desc, void *restrict inst
         {
             for (size_t i = 0; i < desc->attribute_count; ++i)
             {
-                dattr_dx[i] = _mm256_set1_ps((attr_1[i] - attr_0[i]) * inv_dx_ab);
-                dattr_dy[i] = _mm256_set1_ps((attr_2[i] - attr_0[i]) * inv_dy_ac);
+                desc->_attr_dx[i] = _mm256_set1_ps((attr_1[i] - attr_0[i]) * inv_dx_ab * 8.f);
+                desc->_attr_dy[i] = _mm256_set1_ps((attr_2[i] - attr_0[i]) * inv_dy_ac);
+                desc->_attr_0[i] = _mm256_set1_ps(attr_0[i]);
             }
 
-            rasterize(desc, instance, target_pitch, target_stride, attr_0, dattr_dx, dattr_dy, x0, dxdy_left, x1,
-                      dxdy_right, y0, y2);
+            rasterize(desc, instance, target_pitch, target_stride, x0, dxdy_left, x1, dxdy_right, y0, y2);
         }
         else
         {
             float inv_dy_bc = 1.f / (y2 - y1);
             for (size_t i = 0; i < desc->attribute_count; ++i)
             {
-                dattr_dx[i] = _mm256_set1_ps((attr_0[i] - attr_1[i]) * (-inv_dx_ab));
-                dattr_dy[i] = _mm256_set1_ps((attr_2[i] - attr_1[i]) * inv_dy_bc);
+                desc->_attr_dx[i] = _mm256_set1_ps((attr_0[i] - attr_1[i]) * -inv_dx_ab * 8.f);
+                desc->_attr_dy[i] = _mm256_set1_ps((attr_2[i] - attr_1[i]) * inv_dy_bc);
+                desc->_attr_0[i] = _mm256_set1_ps(attr_1[i]);
             }
 
-            rasterize(desc, instance, target_pitch, target_stride, attr_1, dattr_dx, dattr_dy, x1, dxdy_right, x0,
-                      dxdy_left, y0, y2);
+            rasterize(desc, instance, target_pitch, target_stride, x1, dxdy_right, x0, dxdy_left, y0, y2);
         }
     }
 
@@ -255,25 +272,26 @@ void rohan_rasterize(const rohan_shader_desc *restrict desc, void *restrict inst
         if (x1 < x2)
         {
             float inv_dy_ab = 1.f / (y1 - y0);
+
             for (size_t i = 0; i < desc->attribute_count; ++i)
             {
-                dattr_dx[i] = _mm256_set1_ps((attr_2[i] - attr_1[i]) * inv_dx_bc);
-                dattr_dy[i] = _mm256_set1_ps((attr_1[i] - attr_0[i]) * inv_dy_ab);
+                desc->_attr_dx[i] = _mm256_set1_ps((attr_2[i] - attr_1[i]) * inv_dx_bc * 8.f);
+                desc->_attr_dy[i] = _mm256_set1_ps((attr_1[i] - attr_0[i]) * inv_dy_ab);
+                desc->_attr_0[i] = _mm256_set1_ps(attr_0[i]);
             }
 
-            rasterize(desc, instance, target_pitch, target_stride, attr_0, dattr_dx, dattr_dy, x0, dxdy_left, x0,
-                      dxdy_right, y0, y2);
+            rasterize(desc, instance, target_pitch, target_stride, x0, dxdy_left, x0, dxdy_right, y0, y2);
         }
         else
         {
             for (size_t i = 0; i < desc->attribute_count; ++i)
             {
-                dattr_dx[i] = _mm256_set1_ps((attr_1[i] - attr_2[i]) * (-inv_dx_bc));
-                dattr_dy[i] = _mm256_set1_ps((attr_2[i] - attr_0[i]) * inv_dy_ac);
+                desc->_attr_dx[i] = _mm256_set1_ps((attr_1[i] - attr_2[i]) * -inv_dx_bc * 8.f);
+                desc->_attr_dy[i] = _mm256_set1_ps((attr_2[i] - attr_0[i]) * inv_dy_ac);
+                desc->_attr_0[i] = _mm256_set1_ps(attr_0[i]);
             }
 
-            rasterize(desc, instance, target_pitch, target_stride, attr_0, dattr_dx, dattr_dy, x0, dxdy_right, x0,
-                      dxdy_left, y0, y2);
+            rasterize(desc, instance, target_pitch, target_stride, x0, dxdy_right, x0, dxdy_left, y0, y2);
         }
     }
 
@@ -290,43 +308,47 @@ void rohan_rasterize(const rohan_shader_desc *restrict desc, void *restrict inst
         float inv_dy_ab = 1.f / (y1 - y0);
         float inv_dy_bc = 1.f / (y2 - y1);
 
-        float attr_3[ROHAN_MAX_ATTRIBUTES];
-        for (size_t i = 0; i < desc->attribute_count; ++i)
+        if (x1 < x3) // long side right
         {
-            attr_3[i] = fmaf((attr_2[i] - attr_0[i]) * inv_dy_ac, dy_ab, attr_0[i]);
+            for (size_t i = 0; i < desc->attribute_count; ++i)
+            {
+                float attr_3 = fmaf((attr_2[i] - attr_0[i]) * inv_dy_ac, dy_ab, attr_0[i]);
+
+                desc->_attr_dx[i] = _mm256_set1_ps((attr_3 - attr_1[i]) * inv_dx_bd * 8.f);
+                desc->_attr_dy[i] = _mm256_set1_ps((attr_1[i] - attr_0[i]) * inv_dy_ab);
+                desc->_attr_0[i] = _mm256_set1_ps(attr_0[i]);
+            }
+
+            rasterize(desc, instance, target_pitch, target_stride, x0, dxdy_top, x0, dxdy_ac, y0, y1);
+
+            for (size_t i = 0; i < desc->attribute_count; ++i)
+            {
+                desc->_attr_dy[i] = _mm256_set1_ps((attr_2[i] - attr_1[i]) * inv_dy_bc);
+                desc->_attr_0[i] = _mm256_set1_ps(attr_1[i]);
+            }
+
+            rasterize(desc, instance, target_pitch, target_stride, x1, dxdy_bottom, x3, dxdy_ac, y1, y2);
         }
-
-        if (x1 < x3)
+        else // long side left
         {
             for (size_t i = 0; i < desc->attribute_count; ++i)
             {
-                dattr_dx[i] = _mm256_set1_ps((attr_3[i] - attr_1[i]) * inv_dx_bd);
-                dattr_dy[i] = _mm256_set1_ps((attr_1[i] - attr_0[i]) * inv_dy_ab);
+                float attr_3 = fmaf((attr_2[i] - attr_0[i]) * inv_dy_ac, dy_ab, attr_0[i]);
+
+                desc->_attr_dx[i] = _mm256_set1_ps((attr_1[i] - attr_3) * -inv_dx_bd * 8.f);
+                desc->_attr_dy[i] = _mm256_set1_ps((attr_3 - attr_0[i]) * inv_dy_ab);
+
+                desc->_attr_0[i] = _mm256_set1_ps(attr_0[i]);
+                desc->_attr_01[i] = _mm256_set1_ps(attr_3);
             }
 
-            rasterize(desc, instance, target_pitch, target_stride, attr_0, dattr_dx, dattr_dy, x0, dxdy_top, x0,
-                      dxdy_ac, y0, y1);
+            rasterize(desc, instance, target_pitch, target_stride, x0, dxdy_ac, x0, dxdy_top, y0, y1);
 
-            for (size_t i = 0; i < desc->attribute_count; ++i)
-            {
-                dattr_dy[i] = _mm256_set1_ps((attr_2[i] - attr_1[i]) * inv_dy_bc);
-            }
+            __m256 *tmp = desc->_attr_0;
+            desc->_attr_0 = desc->_attr_01;
+            desc->_attr_01 = tmp;
 
-            rasterize(desc, instance, target_pitch, target_stride, attr_1, dattr_dx, dattr_dy, x1, dxdy_bottom, x3,
-                      dxdy_ac, y1, y2);
-        }
-        else
-        {
-            for (size_t i = 0; i < desc->attribute_count; ++i)
-            {
-                dattr_dx[i] = _mm256_set1_ps((attr_1[i] - attr_3[i]) * (-inv_dx_bd));
-                dattr_dy[i] = _mm256_set1_ps((attr_3[i] - attr_0[i]) * inv_dy_ab);
-            }
-
-            rasterize(desc, instance, target_pitch, target_stride, attr_0, dattr_dx, dattr_dy, x0, dxdy_ac, x0,
-                      dxdy_top, y0, y1);
-            rasterize(desc, instance, target_pitch, target_stride, attr_3, dattr_dx, dattr_dy, x3, dxdy_ac, x1,
-                      dxdy_bottom, y1, y2);
+            rasterize(desc, instance, target_pitch, target_stride, x3, dxdy_ac, x1, dxdy_bottom, y1, y2);
         }
     }
 }
